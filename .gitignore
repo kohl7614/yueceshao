@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# 密钥与本地配置（只提交 .example）
+.env
+config.json
+config.local.json
+
+# 数据与语料不入库（政策文件版权与体积；评测标注表在团队工作区）
+data/
+raw/
+*.pdf
+*.tif
+*.docx
+
+# 前端
+node_modules/
+dist/
+
+# 系统
+.DS_Store
