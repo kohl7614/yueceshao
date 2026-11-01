@@ -215,7 +215,7 @@
     const s1 = el("section", "report-sec");
     s1.id = "report-sec-1";
     s1.appendChild(el("h3", null, ""));
-    s1.querySelector("h3").appendChild(el("span", "sec-no", "①"));
+    s1.querySelector("h3").appendChild(el("span", "sec-no", "1"));
     s1.querySelector("h3").appendChild(document.createTextNode("适用政策清单"));
     s1.appendChild(el("p", "sec-note",
       "按项目主题列出可能相关的政策文件与条款。时效状态取自知识库注册表（registry.json）与政策文件清单；「申报已截止」指文件载明的受理窗口已过，仅作参考。"));
@@ -250,7 +250,7 @@
     const s2 = el("section", "report-sec");
     s2.id = "report-sec-2";
     const s2h = el("h3", null, "");
-    s2h.appendChild(el("span", "sec-no", "②"));
+    s2h.appendChild(el("span", "sec-no", "2"));
     s2h.appendChild(document.createTextNode("负面清单命中提示"));
     s2.appendChild(s2h);
     s2.appendChild(el("p", "sec-note",
@@ -293,7 +293,7 @@
     const s3 = el("section", "report-sec");
     s3.id = "report-sec-3";
     const s3h = el("h3", null, "");
-    s3h.appendChild(el("span", "sec-no", "③"));
+    s3h.appendChild(el("span", "sec-no", "3"));
     s3h.appendChild(document.createTextNode("材料缺项清单"));
     s3.appendChild(s3h);
     s3.appendChild(el("p", "sec-note", "对照第①段命中的现行政策文件，列出建议核对、补齐的申报材料（清单为提示性质）。"));
@@ -313,7 +313,7 @@
     const s4 = el("section", "report-sec");
     s4.id = "report-sec-4";
     const s4h = el("h3", null, "");
-    s4h.appendChild(el("span", "sec-no", "④"));
+    s4h.appendChild(el("span", "sec-no", "4"));
     s4h.appendChild(document.createTextNode("修改建议"));
     s4.appendChild(s4h);
     s4.appendChild(el("p", "sec-note", "以下为申报表述层面的改进建议（建议口吻，不做任何判定）。"));
