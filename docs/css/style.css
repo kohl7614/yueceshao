@@ -153,7 +153,6 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
 /* ---------- 首屏 ---------- */
 
 .hero { padding: 44px 0 8px; }
-
 .hero-kicker {
   margin: 0 0 10px;
   color: var(--seal);
@@ -725,7 +724,8 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
   .brand-sub { font-size: 12px; }
   .brand-tag { font-size: 11px; padding: 3px 9px; }
   main { padding: 0 14px; }
-  .hero { padding-top: 22px; }
+  .hero { padding-top: 16px; }
+  .hero-sub { margin-bottom: 16px; }
   .field textarea { min-height: 96px; }
   .check-form { padding: 16px 14px; }
   .btn { width: 100%; justify-content: center; display: inline-flex; align-items: center; }
