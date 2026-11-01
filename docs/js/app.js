@@ -37,6 +37,22 @@
     return text.replace(/[\s\u3000，。；：、！？""''（）()《》【】\-—,.;:!?'"‘’]/g, "");
   }
 
+  /* 数字滚动计数（尊重减少动效偏好，直接落在终值） */
+  function animateCount(node, target) {
+    if (REDUCED_MOTION || target <= 0) {
+      node.textContent = String(target);
+      return;
+    }
+    const start = performance.now();
+    const duration = 600;
+    function tick(now) {
+      const p = Math.min((now - start) / duration, 1);
+      node.textContent = String(Math.round(target * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
   function findMatchedCase(text) {
     const n = normalize(text);
     if (!n) return null;
@@ -129,11 +145,12 @@
       const chip = el("button", "sum-chip" + (d.mod ? " " + d.mod : ""));
       chip.type = "button";
       chip.appendChild(document.createTextNode(d.label + " "));
-      chip.appendChild(el("b", null, String(d.count)));
+      chip.appendChild(el("b", null, "0"));
       chip.addEventListener("click", function () {
         document.getElementById(d.target).scrollIntoView({ behavior: "smooth", block: "start" });
       });
       summary.appendChild(chip);
+      animateCount(chip.querySelector("b"), d.count);
     });
     head.appendChild(summary);
 

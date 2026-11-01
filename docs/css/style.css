@@ -617,6 +617,13 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
 /* ② 负面清单命中 */
 .hit-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 
+/* 命中条目依次入场（prefers-reduced-motion 时全局关闭） */
+.hit-list .hit-item { animation: rise .35s ease both; }
+.hit-list .hit-item:nth-child(2) { animation-delay: .06s; }
+.hit-list .hit-item:nth-child(3) { animation-delay: .12s; }
+.hit-list .hit-item:nth-child(4) { animation-delay: .18s; }
+.hit-list .hit-item:nth-child(n+5) { animation-delay: .24s; }
+
 .hit-item {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
