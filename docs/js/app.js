@@ -10,6 +10,7 @@
   const form = document.getElementById("check-form");
   const input = document.getElementById("project-input");
   const checkBtn = document.getElementById("check-btn");
+  const randomBtn = document.getElementById("random-btn");
   const clearBtn = document.getElementById("clear-btn");
   const charCount = document.getElementById("char-count");
   const caseList = document.getElementById("case-list");
@@ -469,6 +470,21 @@
       input.classList.remove("is-error");
       setStatus("");
     }
+  });
+
+  /* ---------- 随机生成项目描述 ---------- */
+  randomBtn.addEventListener("click", function () {
+    let pool = PRESET_CASES;
+    if (activeCaseId && PRESET_CASES.length > 1) {
+      pool = PRESET_CASES.filter(function (c) { return c.id !== activeCaseId; });
+    }
+    const c = pool[Math.floor(Math.random() * pool.length)];
+    input.value = c.inputText;
+    updateCharCount();
+    setActiveCard(c.id);
+    input.classList.remove("is-error");
+    setStatus("已随机生成一份「" + c.tag + "」项目描述，点击「开始体检」查看报告。");
+    input.focus();
   });
 
   clearBtn.addEventListener("click", function () {
