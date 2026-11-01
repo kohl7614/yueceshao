@@ -45,12 +45,23 @@
     }
     const start = performance.now();
     const duration = 600;
+    let settled = false;
+    function finish() {
+      if (settled) return;
+      settled = true;
+      node.textContent = String(target);
+    }
     function tick(now) {
       const p = Math.min((now - start) / duration, 1);
       node.textContent = String(Math.round(target * (1 - Math.pow(1 - p, 3))));
-      if (p < 1) requestAnimationFrame(tick);
+      if (p < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        finish();
+      }
     }
     requestAnimationFrame(tick);
+    setTimeout(finish, duration + 400); // 兜底：极端节流环境（后台标签页等）也保证终值正确
   }
 
   function findMatchedCase(text) {
