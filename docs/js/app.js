@@ -384,6 +384,16 @@
     analyzePanel.hidden = false;
     const steps = Array.prototype.slice.call(analyzeSteps.children);
     steps.forEach(function (li) { li.classList.remove("is-active", "is-done"); });
+
+    /* 进度反馈：进度条 + 百分比 + 分步文字 */
+    const fill = document.getElementById("analyze-fill");
+    const pct = document.getElementById("analyze-pct");
+    const statusText = document.getElementById("analyze-status-text");
+    const stepTexts = ["正在解析项目描述", "正在扫描政策语料库", "正在进行负面清单比对", "正在汇总四段式报告"];
+    fill.style.width = "0%";
+    pct.textContent = "0%";
+    statusText.textContent = stepTexts[0];
+
     analyzePanel.scrollIntoView({ behavior: "smooth", block: "center" });
     steps[0].classList.add("is-active");
     let i = 0;
@@ -392,6 +402,9 @@
       steps[i].classList.remove("is-active");
       steps[i].classList.add("is-done");
       i += 1;
+      fill.style.width = i * 25 + "%";
+      pct.textContent = i * 25 + "%";
+      statusText.textContent = stepTexts[Math.min(i, 3)];
       if (i < steps.length) {
         steps[i].classList.add("is-active");
       } else {

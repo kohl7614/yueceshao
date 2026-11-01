@@ -424,6 +424,41 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
 
 .analyze-note { margin: 12px 0 0; font-size: 12.5px; color: var(--ink-faint); }
 
+/* 进度反馈：进度条 + 百分比 + 分步文字（呼吸感） */
+.analyze-progress { margin-top: 14px; }
+.analyze-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--paper-deep);
+  overflow: hidden;
+}
+.analyze-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--seal);
+  transition: width .45s ease;
+}
+.analyze-status { margin: 8px 0 0; display: flex; align-items: baseline; gap: 10px; }
+.analyze-pct {
+  font-weight: 700;
+  color: var(--seal);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.analyze-status-text { font-size: 13.5px; color: var(--ink-soft); }
+.analyze-status-text::after {
+  content: "";
+  animation: dots-breathe 1.3s linear infinite;
+}
+@keyframes dots-breathe {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
+}
+
 /* ---------- 报告 ---------- */
 
 .report-wrap { padding: 30px 0 10px; }
