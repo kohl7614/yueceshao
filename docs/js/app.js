@@ -140,31 +140,6 @@
     const head = el("header", "report-head");
     head.appendChild(el("p", "report-title-line", "粤策哨 · 四段式申报前自查报告"));
 
-    /* 体检发现项摘要：只报计数、不下结论；点击平滑跳到对应段 */
-    const suspectCount = report.s2.filter(function (h) { return h.level !== "rule"; }).length;
-    const summary = el("nav", "report-summary");
-    summary.setAttribute("aria-label", "体检发现项导航");
-    summary.appendChild(el("span", "report-summary-label", "体检发现"));
-    [
-      { label: "适用政策", count: report.s1.length, target: "report-sec-1" },
-      { label: "规则命中", count: report.s2.length - suspectCount, target: "report-sec-2", mod: "is-rule" },
-      { label: "疑似命中", count: suspectCount, target: "report-sec-2", mod: "is-suspect" },
-      { label: "材料缺项", count: report.s3.length, target: "report-sec-3" },
-      { label: "修改建议", count: report.s4.length, target: "report-sec-4" }
-    ].forEach(function (d) {
-      if (!d.count) return;
-      const chip = el("button", "sum-chip" + (d.mod ? " " + d.mod : ""));
-      chip.type = "button";
-      chip.appendChild(document.createTextNode(d.label + " "));
-      chip.appendChild(el("b", null, "0"));
-      chip.addEventListener("click", function () {
-        document.getElementById(d.target).scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-      summary.appendChild(chip);
-      animateCount(chip.querySelector("b"), d.count);
-    });
-    head.appendChild(summary);
-
     const metaList = el("dl", "report-meta");
     const mkMeta = function (dtText, ddText) {
       const row = el("div");
@@ -325,6 +300,58 @@
     });
     s4.appendChild(adviceList);
     doc.appendChild(s4);
+
+    /* 段落切换条：四段改为切换视图，避免长滚动信息过载 */
+    const tabSpecs = [
+      { sec: s1, label: "适用政策", count: report.s1.length },
+      { sec: s2, label: "负面命中", count: report.s2.length },
+      { sec: s3, label: "材料缺项", count: report.s3.length },
+      { sec: s4, label: "修改建议", count: report.s4.length }
+    ];
+    const tabBar = el("div", "report-tabs");
+    tabBar.setAttribute("role", "tablist");
+    tabBar.setAttribute("aria-label", "报告段落切换");
+    const tabs = [];
+    function activateTab(idx, moveFocus) {
+      tabSpecs.forEach(function (spec, j) {
+        spec.sec.hidden = j !== idx;
+        const t = tabs[j];
+        t.classList.toggle("is-active", j === idx);
+        t.setAttribute("aria-selected", j === idx ? "true" : "false");
+        t.setAttribute("tabindex", j === idx ? "0" : "-1");
+      });
+      if (moveFocus) tabs[idx].focus();
+    }
+    tabSpecs.forEach(function (spec, idx) {
+      spec.sec.hidden = idx !== 0;
+      spec.sec.setAttribute("role", "tabpanel");
+      const t = el("button", "report-tab" + (idx === 0 ? " is-active" : ""));
+      t.type = "button";
+      t.id = "report-tab-" + (idx + 1);
+      t.setAttribute("role", "tab");
+      t.setAttribute("aria-selected", idx === 0 ? "true" : "false");
+      t.setAttribute("tabindex", idx === 0 ? "0" : "-1");
+      t.setAttribute("aria-controls", spec.sec.id);
+      spec.sec.setAttribute("aria-labelledby", t.id);
+      t.appendChild(document.createTextNode(spec.label + " "));
+      const num = el("b", null, "0");
+      t.appendChild(num);
+      animateCount(num, spec.count);
+      t.addEventListener("click", function () { activateTab(idx, false); });
+      tabs.push(t);
+      tabBar.appendChild(t);
+    });
+    tabBar.addEventListener("keydown", function (e) {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      e.preventDefault();
+      let cur = 0;
+      for (let j = 0; j < tabs.length; j++) {
+        if (tabs[j].classList.contains("is-active")) { cur = j; break; }
+      }
+      const delta = e.key === "ArrowRight" ? 1 : -1;
+      activateTab((cur + delta + tabs.length) % tabs.length, true);
+    });
+    head.appendChild(tabBar);
 
     /* 报告尾部：免责声明 + 操作 */
     const foot = el("footer", "report-foot");

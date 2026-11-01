@@ -476,38 +476,40 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
   transform: rotate(-4deg);
 }
 
-/* 体检发现项摘要条：只报计数、不判结论 */
-.report-summary {
+/* 报告段落切换条：四段切换视图，替代长滚动 */
+.report-tabs {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 8px;
-  margin: 0 0 14px;
+  margin-top: 16px;
 }
-.report-summary-label { font-size: 13.5px; font-weight: 600; color: var(--ink-soft); letter-spacing: .04em; }
-.sum-chip {
+.report-tab {
   appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-height: 30px;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--card);
   color: var(--ink-soft);
   font-family: var(--font-body);
-  font-size: 13.5px;
-  padding: 3px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 4px 14px;
   cursor: pointer;
-  transition: border-color .12s ease, box-shadow .12s ease;
+  transition: border-color .12s ease, background-color .12s ease, box-shadow .12s ease;
 }
-.sum-chip b { font-size: 14.5px; color: var(--ink); }
-.sum-chip:hover { border-color: var(--seal); }
-.sum-chip:focus-visible { outline: 3px solid rgba(163, 51, 39, .3); outline-offset: 2px; }
-.sum-chip.is-rule { border-color: rgba(163, 51, 39, .45); background: var(--seal-tint); color: var(--seal-deep); }
-.sum-chip.is-rule b { color: var(--seal-deep); }
-.sum-chip.is-suspect { border-color: rgba(122, 84, 16, .45); background: var(--amber-tint); color: var(--amber); }
-.sum-chip.is-suspect b { color: var(--amber); }
+.report-tab b { font-size: 15px; color: var(--ink); }
+.report-tab:hover { border-color: var(--seal); }
+.report-tab:focus-visible { outline: 3px solid rgba(163, 51, 39, .3); outline-offset: 2px; }
+.report-tab.is-active {
+  border-color: var(--seal);
+  background: var(--seal);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(163, 51, 39, .25);
+}
+.report-tab.is-active b { color: #fff; }
 
 .report-meta { display: grid; gap: 8px; margin: 0; font-size: 14.5px; }
 .report-meta div { display: flex; gap: 8px; }
@@ -863,13 +865,18 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
   .report-meta dt { min-width: 0; }
   .hit-head { align-items: flex-start; flex-direction: column; gap: 6px; }
   .report-wrap, .notice, .presets { scroll-margin-top: 104px; }
+  /* 标签条移动端横向滑动 */
+  .report-tabs { flex-wrap: nowrap; overflow-x: auto; margin-top: 12px; }
+  .report-tab { flex-shrink: 0; white-space: nowrap; }
   /* 免责声明压成紧凑两行，保证首屏能看到「开始体检」主按钮 */
   .disclaimer-inner { padding: 5px 14px; }
   .disclaimer-inner p { font-size: 12px; line-height: 1.5; }
 }
 
-/* 打印时隐藏固定免责声明栏（报告内已重复展示） */
+/* 打印时隐藏固定免责声明栏（报告内已重复展示）；打印输出全部四段 */
 @media print {
   body { padding-bottom: 0; }
   .disclaimer-bar, .site-header, .hero, .presets, .data-notes, .notice { display: none !important; }
+  .report-tabs { display: none !important; }
+  .report-sec[hidden] { display: block !important; }
 }
