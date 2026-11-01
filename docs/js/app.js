@@ -372,9 +372,14 @@
         showReport(caseDef);
       }
     }, 520);
+    /* 兜底：极端节流环境（后台标签页等）下计时器停摆，也保证报告最终出现 */
+    setTimeout(function () {
+      if (!analyzePanel.hidden) showReport(caseDef);
+    }, 520 * 4 + 900);
   }
 
   function showReport(caseDef) {
+    clearInterval(analyzeTimer);
     checkBtn.disabled = false;
     analyzePanel.hidden = true;
     renderReport(caseDef);
