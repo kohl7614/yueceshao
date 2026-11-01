@@ -102,7 +102,7 @@
     });
   }
 
-  /* ---------- 预置案例卡片 ---------- */
+  /* ---------- 典型案例卡片 ---------- */
   function renderCases() {
     PRESET_CASES.forEach(function (c) {
       const li = el("li");
@@ -442,7 +442,7 @@
     const text = input.value.trim();
 
     if (!text) {
-      setStatus("请先输入项目描述，或点击下方预置案例一键填入。", true);
+      setStatus("请先输入项目描述，或点击下方典型案例一键填入。", true);
       input.classList.add("is-error");
       input.focus();
       return;

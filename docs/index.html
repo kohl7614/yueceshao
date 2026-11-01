@@ -20,7 +20,7 @@
           <p class="brand-sub">县域强村公司与合作社 · 申报前自查辅助工具</p>
         </div>
       </div>
-      <span class="brand-tag">静态演示版 · 预置案例</span>
+      <span class="brand-tag">静态演示版 · 典型案例</span>
     </div>
   </header>
 
@@ -35,7 +35,7 @@
         <div class="field">
           <label for="project-input">项目描述</label>
           <textarea id="project-input" rows="7"
-            placeholder="例如：我是某县某镇某村人居环境整治项目的申报人。我村常住人口约1200人……（也可以点击下方预置案例，一键填入）"></textarea>
+            placeholder="例如：我是某县某镇某村人居环境整治项目的申报人。我村常住人口约1200人……（也可以点击下方典型案例，一键填入）"></textarea>
           <p class="char-count" id="char-count" aria-live="polite">0 字</p>
         </div>
         <div class="form-actions">
@@ -43,7 +43,7 @@
           <button type="button" class="btn btn-ghost" id="random-btn">随机生成项目描述</button>
           <button type="button" class="btn btn-ghost" id="clear-btn">清空</button>
         </div>
-        <p class="form-hint">本页面为纯前端静态演示：内容不出本机、不上传任何数据；体检结果来自下方预置案例的静态报告。</p>
+        <p class="form-hint">本页面为纯前端静态演示：内容不出本机、不上传任何数据；体检结果来自下方典型案例的静态报告。</p>
       </form>
     </section>
 
@@ -68,9 +68,9 @@
       </div>
     </section>
 
-    <!-- ② 预置案例 -->
+    <!-- ② 典型案例 -->
     <section class="presets" id="presets" aria-labelledby="presets-title">
-      <h2 id="presets-title" class="section-title">预置案例（点击即可填入）</h2>
+      <h2 id="presets-title" class="section-title">典型案例（点击即测）</h2>
       <p class="section-sub">三个案例均改编自审计公告真实条目（案例标注表），点击卡片会把完整项目描述填入上方输入框。</p>
       <ul class="case-list" id="case-list"><!-- 由 js/app.js 渲染 --></ul>
     </section>
@@ -102,7 +102,7 @@
           <ul>
             <li>文号、发布日期、效力状态：<code>04_政策语料/00_工作区/registry.json</code> 与 <code>04_政策语料/政策文件清单-初稿.csv</code>；</li>
             <li>条款原文摘录：<code>04_政策语料/03_清洗文本/</code> 对应文件（逐字摘录）；</li>
-            <li>预置案例：<code>04_政策语料/审计公告/案例标注表.csv</code> 的「改编后申报场景描述」列（案例 C139、C83、C02）；</li>
+            <li>典型案例来源：<code>04_政策语料/审计公告/案例标注表.csv</code> 的「改编后申报场景描述」列（案例 C139、C83、C02）；</li>
             <li>标注习惯：原文载明施行条款的，按原文标注施行日期；未载明施行条款的，按 registry「发布日期」标注印发日期，不作推断。</li>
           </ul>
         </div>
