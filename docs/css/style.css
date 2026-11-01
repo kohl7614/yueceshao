@@ -11,7 +11,7 @@
   --card: #fdfbf4;
   --ink: #26221b;
   --ink-soft: #55503e;
-  --ink-faint: #7d7560;
+  --ink-faint: #6b6350;
   --line: #d9cfb8;
   --line-soft: #e6ddc9;
 
@@ -23,9 +23,9 @@
   /* 时效状态 */
   --bamboo: #2f6d4e;        /* 现行有效 */
   --bamboo-tint: #e2efe5;
-  --amber: #96690f;         /* 申报已截止 / 疑似命中 */
+  --amber: #7a5410;         /* 申报已截止 / 疑似命中 */
   --amber-tint: #f6ecd4;
-  --ash: #6f6a5b;           /* 已失效供参考 */
+  --ash: #615c4c;           /* 已失效供参考 */
   --ash-tint: #ebe7db;
 
   /* 字体（仅系统字体，无外部依赖） */
