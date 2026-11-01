@@ -379,9 +379,10 @@
   }
 
   /* ---------- 模拟体检过程（演示动画，非真实推理） ---------- */
-  function playAnalyze(caseDef) {
+  function playAnalyze(onDone) {
     checkBtn.disabled = true;
     reportWrap.hidden = true;
+    notice.hidden = true;
     analyzePanel.hidden = false;
     const steps = Array.prototype.slice.call(analyzeSteps.children);
     steps.forEach(function (li) { li.classList.remove("is-active", "is-done"); });
@@ -390,7 +391,7 @@
     const fill = document.getElementById("analyze-fill");
     const pct = document.getElementById("analyze-pct");
     const statusText = document.getElementById("analyze-status-text");
-    const stepTexts = ["正在解析项目描述", "正在扫描政策语料库", "正在进行负面清单比对", "正在汇总四段式报告"];
+    const stepTexts = ["正在解析项目描述", "正在扫描政策语料库", "正在进行负面清单比对", "正在汇总结果"];
     fill.style.width = "0%";
     pct.textContent = "0%";
     statusText.textContent = stepTexts[0];
@@ -409,22 +410,30 @@
       if (i < steps.length) {
         steps[i].classList.add("is-active");
       } else {
-        clearInterval(analyzeTimer);
-        showReport(caseDef);
+        finishAnalyze(onDone);
       }
     }, 520);
-    /* 兜底：极端节流环境（后台标签页等）下计时器停摆，也保证报告最终出现 */
+    /* 兜底：极端节流环境（后台标签页等）下计时器停摆，也保证结果最终出现 */
     setTimeout(function () {
-      if (!analyzePanel.hidden) showReport(caseDef);
+      if (!analyzePanel.hidden) finishAnalyze(onDone);
     }, 520 * 4 + 900);
   }
 
-  function showReport(caseDef) {
+  function finishAnalyze(onDone) {
     clearInterval(analyzeTimer);
     checkBtn.disabled = false;
     analyzePanel.hidden = true;
+    onDone();
+  }
+
+  function showReport(caseDef) {
     renderReport(caseDef);
     reportWrap.scrollIntoView({ behavior: REDUCED_MOTION ? "auto" : "smooth", block: "start" });
+  }
+
+  function showNotice() {
+    notice.hidden = false;
+    notice.scrollIntoView({ behavior: REDUCED_MOTION ? "auto" : "smooth", block: "center" });
   }
 
   /* ---------- 体检流程 ---------- */
@@ -444,17 +453,19 @@
     if (matched) {
       setActiveCard(matched.id);
       setStatus("");
-      notice.hidden = true;
       if (REDUCED_MOTION) {
         showReport(matched);
       } else {
-        playAnalyze(matched);
+        playAnalyze(function () { showReport(matched); });
       }
     } else {
       setStatus("");
       reportWrap.hidden = true;
-      notice.hidden = false;
-      notice.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (REDUCED_MOTION) {
+        showNotice();
+      } else {
+        playAnalyze(showNotice);
+      }
     }
   }
 
