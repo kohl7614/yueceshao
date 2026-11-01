@@ -368,6 +368,9 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
 
 .report-wrap { padding: 30px 0 10px; }
 
+/* 滚动定位补偿：吸顶 header 之下，锚点滚动不再盖住区块标题 */
+.report-wrap, .notice, .presets { scroll-margin-top: 84px; }
+
 .report-doc {
   background: var(--card);
   border: 1px solid var(--line);
@@ -677,14 +680,15 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
 /* ---------- 响应式 ---------- */
 
 @media (max-width: 640px) {
-  body { font-size: 16px; padding-bottom: 76px; }
+  body { font-size: 16px; padding-bottom: 56px; }
   .header-inner { padding: 10px 14px; }
   .brand-seal { width: 40px; height: 40px; font-size: 13px; }
   .brand-name { font-size: 18px; }
-  .brand-sub { font-size: 11.5px; }
+  .brand-sub { font-size: 12px; }
   .brand-tag { font-size: 11px; padding: 3px 9px; }
   main { padding: 0 14px; }
-  .hero { padding-top: 30px; }
+  .hero { padding-top: 22px; }
+  .field textarea { min-height: 96px; }
   .check-form { padding: 16px 14px; }
   .btn { width: 100%; justify-content: center; display: inline-flex; align-items: center; }
   .form-actions { flex-direction: column; }
@@ -694,7 +698,10 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
   .report-meta div { flex-direction: column; gap: 2px; }
   .report-meta dt { min-width: 0; }
   .hit-head { align-items: flex-start; flex-direction: column; gap: 6px; }
-  .disclaimer-inner p { font-size: 12.5px; }
+  .report-wrap, .notice, .presets { scroll-margin-top: 104px; }
+  /* 免责声明压成紧凑两行，保证首屏能看到「开始体检」主按钮 */
+  .disclaimer-inner { padding: 5px 14px; }
+  .disclaimer-inner p { font-size: 12px; line-height: 1.5; }
 }
 
 /* 打印时隐藏固定免责声明栏（报告内已重复展示） */

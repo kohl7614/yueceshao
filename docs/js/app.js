@@ -265,6 +265,11 @@
 
     reportBody.replaceChildren(doc);
     reportWrap.hidden = false;
+
+    /* 焦点移交：标题可聚焦，键盘与读屏用户随滚动一起进入报告 */
+    const titleEl = doc.querySelector(".report-title-line");
+    titleEl.setAttribute("tabindex", "-1");
+    titleEl.focus({ preventScroll: true });
   }
 
   /* ---------- 体检流程 ---------- */
