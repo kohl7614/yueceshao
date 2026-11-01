@@ -363,6 +363,67 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
 .notice-card p { margin: 0 0 12px; }
 .notice-card .btn { min-height: 44px; }
 
+/* ---------- 模拟体检过程（演示动画） ---------- */
+
+.analyze { padding: 12px 0 6px; }
+
+.analyze-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--seal);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-card);
+}
+
+.analyze-title {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.analyze-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.analyze-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15.5px;
+  color: var(--ink-faint);
+}
+
+.step-no {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  background: var(--card);
+}
+
+.analyze-steps li.is-active { color: var(--ink); }
+.analyze-steps li.is-active .step-no {
+  border-color: var(--seal);
+  color: var(--seal);
+  animation: step-pulse 1.1s ease-in-out infinite;
+}
+.analyze-steps li.is-done { color: var(--ink-soft); }
+.analyze-steps li.is-done .step-no { border-color: var(--bamboo); background: var(--bamboo); color: #fff; }
+.analyze-steps li.is-done::after { content: "✓"; margin-left: auto; color: var(--bamboo); font-weight: 700; }
+
+@keyframes step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(163, 51, 39, .18); }
+  50% { box-shadow: 0 0 0 5px rgba(163, 51, 39, 0); }
+}
+
+.analyze-note { margin: 12px 0 0; font-size: 12.5px; color: var(--ink-faint); }
+
 /* ---------- 报告 ---------- */
 
 .report-wrap { padding: 30px 0 10px; }

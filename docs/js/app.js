@@ -17,8 +17,13 @@
   const noticeBack = document.getElementById("notice-back");
   const reportWrap = document.getElementById("report-wrap");
   const reportBody = document.getElementById("report-body");
+  const analyzePanel = document.getElementById("analyze");
+  const analyzeSteps = document.getElementById("analyze-steps");
+
+  const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   let activeCaseId = null;
+  let analyzeTimer = null;
 
   /* ---------- 工具函数 ---------- */
   function el(tag, className, text) {
@@ -300,8 +305,40 @@
     titleEl.focus({ preventScroll: true });
   }
 
+  /* ---------- 模拟体检过程（演示动画，非真实推理） ---------- */
+  function playAnalyze(caseDef) {
+    checkBtn.disabled = true;
+    reportWrap.hidden = true;
+    analyzePanel.hidden = false;
+    const steps = Array.prototype.slice.call(analyzeSteps.children);
+    steps.forEach(function (li) { li.classList.remove("is-active", "is-done"); });
+    analyzePanel.scrollIntoView({ behavior: "smooth", block: "center" });
+    steps[0].classList.add("is-active");
+    let i = 0;
+    clearInterval(analyzeTimer);
+    analyzeTimer = setInterval(function () {
+      steps[i].classList.remove("is-active");
+      steps[i].classList.add("is-done");
+      i += 1;
+      if (i < steps.length) {
+        steps[i].classList.add("is-active");
+      } else {
+        clearInterval(analyzeTimer);
+        showReport(caseDef);
+      }
+    }, 520);
+  }
+
+  function showReport(caseDef) {
+    checkBtn.disabled = false;
+    analyzePanel.hidden = true;
+    renderReport(caseDef);
+    reportWrap.scrollIntoView({ behavior: REDUCED_MOTION ? "auto" : "smooth", block: "start" });
+  }
+
   /* ---------- 体检流程 ---------- */
   function runCheck() {
+    if (!analyzePanel.hidden) return; // 演示动画进行中，忽略重复提交
     const text = input.value.trim();
 
     if (!text) {
@@ -317,8 +354,11 @@
       setActiveCard(matched.id);
       setStatus("");
       notice.hidden = true;
-      renderReport(matched);
-      reportWrap.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (REDUCED_MOTION) {
+        showReport(matched);
+      } else {
+        playAnalyze(matched);
+      }
     } else {
       setStatus("");
       reportWrap.hidden = true;
@@ -349,6 +389,9 @@
     setActiveCard(null);
     reportWrap.hidden = true;
     notice.hidden = true;
+    clearInterval(analyzeTimer);
+    analyzePanel.hidden = true;
+    checkBtn.disabled = false;
     input.focus();
   });
 
