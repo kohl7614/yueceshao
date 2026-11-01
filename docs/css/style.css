@@ -400,16 +400,54 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
   gap: 10px;
 }
 .report-title-line::before {
-  content: "";
+  content: "粤";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 34px;
   height: 34px;
   background: var(--seal);
   color: #fff;
   border-radius: 6px;
   flex-shrink: 0;
-  -webkit-mask: radial-gradient(circle 9px at 8px 8px, transparent 95%, #000) 0 0 / 16px 16px;
-          mask: radial-gradient(circle 9px at 8px 8px, transparent 95%, #000) 0 0 / 16px 16px;
+  font-size: 19px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  transform: rotate(-4deg);
 }
+
+/* 体检发现项摘要条：只报计数、不判结论 */
+.report-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.report-summary-label { font-size: 13.5px; font-weight: 600; color: var(--ink-soft); letter-spacing: .04em; }
+.sum-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink-soft);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  padding: 3px 12px;
+  cursor: pointer;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.sum-chip b { font-size: 14.5px; color: var(--ink); }
+.sum-chip:hover { border-color: var(--seal); }
+.sum-chip:focus-visible { outline: 3px solid rgba(163, 51, 39, .3); outline-offset: 2px; }
+.sum-chip.is-rule { border-color: rgba(163, 51, 39, .45); background: var(--seal-tint); color: var(--seal-deep); }
+.sum-chip.is-rule b { color: var(--seal-deep); }
+.sum-chip.is-suspect { border-color: rgba(122, 84, 16, .45); background: var(--amber-tint); color: var(--amber); }
+.sum-chip.is-suspect b { color: var(--amber); }
 
 .report-meta { display: grid; gap: 8px; margin: 0; font-size: 14.5px; }
 .report-meta div { display: flex; gap: 8px; }

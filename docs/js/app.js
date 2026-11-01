@@ -108,6 +108,30 @@
     const head = el("header", "report-head");
     head.appendChild(el("p", "report-title-line", "粤策哨 · 四段式申报前自查报告"));
 
+    /* 体检发现项摘要：只报计数、不下结论；点击平滑跳到对应段 */
+    const suspectCount = report.s2.filter(function (h) { return h.level !== "rule"; }).length;
+    const summary = el("nav", "report-summary");
+    summary.setAttribute("aria-label", "体检发现项导航");
+    summary.appendChild(el("span", "report-summary-label", "体检发现"));
+    [
+      { label: "适用政策", count: report.s1.length, target: "report-sec-1" },
+      { label: "规则命中", count: report.s2.length - suspectCount, target: "report-sec-2", mod: "is-rule" },
+      { label: "疑似命中", count: suspectCount, target: "report-sec-2", mod: "is-suspect" },
+      { label: "材料缺项", count: report.s3.length, target: "report-sec-3" },
+      { label: "修改建议", count: report.s4.length, target: "report-sec-4" }
+    ].forEach(function (d) {
+      if (!d.count) return;
+      const chip = el("button", "sum-chip" + (d.mod ? " " + d.mod : ""));
+      chip.type = "button";
+      chip.appendChild(document.createTextNode(d.label + " "));
+      chip.appendChild(el("b", null, String(d.count)));
+      chip.addEventListener("click", function () {
+        document.getElementById(d.target).scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      summary.appendChild(chip);
+    });
+    head.appendChild(summary);
+
     const metaList = el("dl", "report-meta");
     const mkMeta = function (dtText, ddText) {
       const row = el("div");
@@ -143,6 +167,7 @@
 
     /* 第①段 适用政策清单 */
     const s1 = el("section", "report-sec");
+    s1.id = "report-sec-1";
     s1.appendChild(el("h3", null, ""));
     s1.querySelector("h3").appendChild(el("span", "sec-no", "①"));
     s1.querySelector("h3").appendChild(document.createTextNode("适用政策清单"));
@@ -177,6 +202,7 @@
 
     /* 第②段 负面清单命中提示 */
     const s2 = el("section", "report-sec");
+    s2.id = "report-sec-2";
     const s2h = el("h3", null, "");
     s2h.appendChild(el("span", "sec-no", "②"));
     s2h.appendChild(document.createTextNode("负面清单命中提示"));
@@ -215,6 +241,7 @@
 
     /* 第③段 材料缺项清单 */
     const s3 = el("section", "report-sec");
+    s3.id = "report-sec-3";
     const s3h = el("h3", null, "");
     s3h.appendChild(el("span", "sec-no", "③"));
     s3h.appendChild(document.createTextNode("材料缺项清单"));
@@ -234,6 +261,7 @@
 
     /* 第④段 修改建议 */
     const s4 = el("section", "report-sec");
+    s4.id = "report-sec-4";
     const s4h = el("h3", null, "");
     s4h.appendChild(el("span", "sec-no", "④"));
     s4h.appendChild(document.createTextNode("修改建议"));
