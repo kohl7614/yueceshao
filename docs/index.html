@@ -81,18 +81,24 @@
       <div id="report-body"><!-- 由 js/app.js 渲染 --></div>
     </section>
 
-    <!-- 数据来源说明 -->
+    <!-- 数据来源说明（默认收起，点击展开） -->
     <section class="data-notes" aria-labelledby="notes-title">
-      <h2 id="notes-title" class="section-title">演示数据来源说明</h2>
-      <div class="notes-card">
-        <p>本页引用的全部<strong>文号、条款号与日期</strong>，均来自团队知识库已核验条目，未作任何编造：</p>
-        <ul>
-          <li>文号、发布日期、效力状态：<code>04_政策语料/00_工作区/registry.json</code> 与 <code>04_政策语料/政策文件清单-初稿.csv</code>；</li>
-          <li>条款原文摘录：<code>04_政策语料/03_清洗文本/</code> 对应文件（逐字摘录）；</li>
-          <li>预置案例：<code>04_政策语料/审计公告/案例标注表.csv</code> 的「改编后申报场景描述」列（案例 C139、C83、C02）；</li>
-          <li>标注习惯：原文载明施行条款的，按原文标注施行日期；未载明施行条款的，按 registry「发布日期」标注印发日期，不作推断。</li>
-        </ul>
-      </div>
+      <details class="notes-details">
+        <summary class="notes-summary">
+          <h2 id="notes-title" class="section-title">演示数据来源说明</h2>
+          <span class="notes-hint">点击展开核验来源</span>
+          <span class="notes-chevron" aria-hidden="true">▸</span>
+        </summary>
+        <p class="section-sub">本页引用的全部<strong>文号、条款号与日期</strong>，均来自团队知识库已核验条目，未作任何编造：</p>
+        <div class="notes-card">
+          <ul>
+            <li>文号、发布日期、效力状态：<code>04_政策语料/00_工作区/registry.json</code> 与 <code>04_政策语料/政策文件清单-初稿.csv</code>；</li>
+            <li>条款原文摘录：<code>04_政策语料/03_清洗文本/</code> 对应文件（逐字摘录）；</li>
+            <li>预置案例：<code>04_政策语料/审计公告/案例标注表.csv</code> 的「改编后申报场景描述」列（案例 C139、C83、C02）；</li>
+            <li>标注习惯：原文载明施行条款的，按原文标注施行日期；未载明施行条款的，按 registry「发布日期」标注印发日期，不作推断。</li>
+          </ul>
+        </div>
+      </details>
     </section>
   </main>
 

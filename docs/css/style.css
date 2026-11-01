@@ -515,6 +515,30 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
 .report-meta dd { margin: 0; color: var(--ink-soft); }
 .report-meta a { word-break: break-all; }
 
+/* 报告行政信息折叠 */
+.meta-fold { display: block; }
+.meta-summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 13.5px;
+  color: var(--ink-faint);
+  padding: 2px 0;
+}
+.meta-summary::-webkit-details-marker { display: none; }
+.meta-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--seal);
+  transition: transform .15s ease;
+}
+.meta-details[open] .meta-summary::before { transform: rotate(90deg); }
+.meta-summary:hover { color: var(--seal); }
+.meta-rows { display: grid; gap: 8px; margin-top: 8px; }
+.meta-row { display: flex; gap: 8px; }
+.meta-k { color: var(--ink-faint); flex-shrink: 0; min-width: 72px; }
+.meta-v { color: var(--ink-soft); word-break: break-all; }
+
 .report-head-note { padding: 0 26px 16px; border-bottom: 1px solid var(--line-soft); background: var(--card); }
 .report-head-note .sec-note { margin: 0; }
 
@@ -642,6 +666,26 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
   margin-top: 4px;
 }
 
+/* 命中依据折叠 */
+.ev-details { margin-top: 10px; }
+.ev-summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.ev-summary::-webkit-details-marker { display: none; }
+.ev-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--seal);
+  transition: transform .15s ease;
+}
+.ev-details[open] .ev-summary::before { transform: rotate(90deg); }
+.ev-summary:hover { color: var(--seal); }
+
 .hit-note { margin: 8px 0 0; font-size: 13px; color: var(--ink-faint); }
 
 /* ③ 材料缺项清单 */
@@ -734,6 +778,20 @@ main { max-width: 920px; margin: 0 auto; padding: 0 20px; }
 }
 .notes-card ul { margin: 10px 0 0; padding-left: 20px; }
 .notes-card li { margin-bottom: 6px; }
+
+/* 数据来源说明折叠 */
+.notes-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.notes-summary::-webkit-details-marker { display: none; }
+.notes-hint { font-size: 13px; color: var(--ink-faint); }
+.notes-chevron { color: var(--seal); font-size: 15px; transition: transform .15s ease; }
+.notes-details[open] .notes-chevron { transform: rotate(90deg); }
+.notes-summary:hover .notes-hint { color: var(--seal); }
 
 /* ---------- 底部固定免责声明 ---------- */
 

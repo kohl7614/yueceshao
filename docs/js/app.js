@@ -145,20 +145,33 @@
       metaList.appendChild(row);
     };
     mkMeta("体检输入", "「" + meta.caseTag + "」" + meta.caseTitle);
-    mkMeta("案例来源", meta.caseSource);
+
+    /* 行政信息折叠：案例来源 / 来源链接 / 生成方式默认收起 */
+    const metaFold = el("div", "meta-fold");
+    const foldDetails = el("details", "meta-details");
+    const foldSummary = el("summary", "meta-summary", "案例来源 · 链接 · 生成方式");
+    const foldRows = el("div", "meta-rows");
+    const mkFoldRow = function (k, valueNode) {
+      const row = el("div", "meta-row");
+      row.appendChild(el("span", "meta-k", k));
+      const v = el("span", "meta-v");
+      if (valueNode) v.appendChild(valueNode);
+      row.appendChild(v);
+      foldRows.appendChild(row);
+    };
+    mkFoldRow("案例来源", document.createTextNode(meta.caseSource));
     if (meta.sourceUrl) {
-      const row = el("div");
-      row.appendChild(el("dt", null, "来源链接"));
-      const dd = el("dd");
       const a = el("a", null, meta.sourceUrl);
       a.href = meta.sourceUrl;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
-      dd.appendChild(a);
-      row.appendChild(dd);
-      metaList.appendChild(row);
+      mkFoldRow("来源链接", a);
     }
-    mkMeta("生成方式", "静态预置输出（本页内置，无模型推理）");
+    mkFoldRow("生成方式", document.createTextNode("静态预置输出（本页内置，无模型推理）"));
+    foldDetails.appendChild(foldSummary);
+    foldDetails.appendChild(foldRows);
+    metaFold.appendChild(foldDetails);
+    metaList.appendChild(metaFold);
     head.appendChild(metaList);
     doc.appendChild(head);
 
@@ -224,6 +237,8 @@
       item.appendChild(headRow);
       item.appendChild(el("p", "hit-desc", hit.desc));
 
+      const evDetails = el("details", "ev-details");
+      const evSummary = el("summary", "ev-summary", "展开依据（文号 · 条款原文 · 来源）");
       const ev = el("div", "hit-evidence");
       hit.evidence.forEach(function (line) {
         if (!line.v && !line.k) return;
@@ -237,7 +252,9 @@
         row.appendChild(el("span", "ev-v", line.v || "——"));
         ev.appendChild(row);
       });
-      item.appendChild(ev);
+      evDetails.appendChild(evSummary);
+      evDetails.appendChild(ev);
+      item.appendChild(evDetails);
       if (hit.note) item.appendChild(el("p", "hit-note", "说明：" + hit.note));
       hitList.appendChild(item);
     });
