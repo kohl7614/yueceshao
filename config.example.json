@@ -4,6 +4,7 @@
   "data_repo": "../yueceshao-data",
   "registry_path": "00_工作区/registry.json",
   "rules_terms_file": "00_工作区/负面清单_条款归并.json",
+  "audit_cases_file": "审计公告/案例标注表.csv",
   "clean_text_dir": "03_清洗文本",
   "snapshot_dir": "02_页面快照",
   "index": {
