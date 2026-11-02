@@ -103,6 +103,37 @@ def test_from_env_parses_truthy_and_falsy() -> None:
         AblationSwitches.from_env(environ={"YUECESHAO_ABLATION_RERANK": "maybe"})
 
 
+def test_from_env_rejects_misspelled_switch_name() -> None:
+    """带前缀但后缀拼错的环境变量必须抛错，不能被静默忽略。
+
+    这是最容易踩的坑：``RERANKK`` 多打一个 K，如果只遍历已知开关名，这个变量会被
+    直接跳过——使用者以为 rerank 已关闭，实际它仍开着，消融结论整个失真。
+    """
+    with pytest.raises(ValueError, match="无法识别"):
+        AblationSwitches.from_env(environ={"YUECESHAO_ABLATION_RERANKK": "0"})
+
+    # 多个拼错时一次全报出来，不让人一个个试；混入的合法开关不得被误报
+    with pytest.raises(ValueError) as excinfo:
+        AblationSwitches.from_env(
+            environ={
+                "YUECESHAO_ABLATION_RERANKK": "0",
+                "YUECESHAO_ABLATION_HYBRID_RETRIEVALL": "0",
+                "YUECESHAO_ABLATION_TEMPORAL_FILTER": "0",  # 合法，不该进报错清单
+            }
+        )
+    message = str(excinfo.value)
+    reported = message.split("无法识别：", 1)[1].split("；", 1)[0]
+    assert "RERANKK" in reported
+    assert "HYBRID_RETRIEVALL" in reported
+    assert "TEMPORAL_FILTER" not in reported
+
+    # 前缀不匹配的普通环境变量不能触发误报（例如别的项目变量）
+    switches = AblationSwitches.from_env(
+        environ={"OTHER_ABLATION_RERANKK": "0", "YUECESHAO_ABLATION_RERANK": "0"}
+    )
+    assert switches.disabled() == ("rerank",)
+
+
 def test_with_overrides_is_immutable_and_ordered() -> None:
     """派生新快照不改动原对象，disabled() 按规范顺序输出。"""
     base = AblationSwitches.default()
