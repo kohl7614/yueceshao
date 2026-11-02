@@ -996,6 +996,17 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
   .disclaimer-inner p { font-size: 12px; line-height: 1.5; }
 }
 
+
+/* 更窄的手机（逻辑宽 ≤380px，如 375 的 iPhone SE/12 mini）：收紧纵向间距，
+   保证首屏「开始体检」完整露出、不被固定免责声明栏压住 */
+@media (max-width: 380px) {
+  .header-inner { padding: 8px 14px; }
+  .hero { padding-top: 10px; }
+  .hero-kicker { margin-bottom: 6px; }
+  .hero-sub { margin-bottom: 10px; }
+  .field textarea { min-height: 72px; height: 180px; }  /* rows 定高243px压不住，直接定高 */
+  .check-form { padding: 12px; }
+}
 /* 打印时隐藏固定免责声明栏（报告内已重复展示）；打印输出全部四段 */
 @media print {
   body { padding-bottom: 0; }
