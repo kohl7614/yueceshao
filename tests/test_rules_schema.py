@@ -1,6 +1,6 @@
 """tests/test_rules_schema.py — feat/rules-schema 单元测试。
 
-夹具：tests/fixtures/rules_sample.json（9 条人造样例规则，含 2 个人造等价组）。
+夹具：tests/fixtures/rules_sample.json（10 条人造样例规则，含 2 个人造等价组）。
 红线遵守：测试不使用真实政策语料原文、不引用真实文号（样例文号均为〔测试样例〕前缀）。
 """
 
@@ -29,8 +29,8 @@ def _by_ref(store: RuleStore, ref: str) -> RuleRecord:
 
 
 def test_load_sample_json_maps_all_fields(store: RuleStore) -> None:
-    """9 条人造样例全部加载成功，字段映射与类型转换正确。"""
-    assert len(store.records) == 9
+    """10 条人造样例全部加载成功，字段映射与类型转换正确。"""
+    assert len(store.records) == 10
     record = store.records[0]
     assert record.clause_no == "一"
     assert record.doc_index == 1                 # 文件序号转为 int
@@ -113,6 +113,6 @@ def test_data_path_comes_from_config(tmp_path: Path) -> None:
         json.dumps({"data_repo": str(tmp_path), "rules_terms_file": "rules_sample.json"}),
         encoding="utf-8",
     )
-    assert len(load_store_from_config(config_file).records) == 9
+    assert len(load_store_from_config(config_file).records) == 10
     with pytest.raises(FileNotFoundError, match="config.example.json"):
         load_config(tmp_path / "missing.json")
