@@ -55,6 +55,7 @@ class RuleRecord:
     doc_date: str                # 溯源_发布日期
     doc_category: str            # 溯源_类别
     group_decision: str          # 组裁定（接受/待人工）
+    curated_out: bool = False    # 负面清单口径出局（curation 标注非空即出局；2026-11-02 国市监21条先例）
 
     @property
     def is_effective(self) -> bool:
@@ -68,8 +69,8 @@ class RuleRecord:
 
     @property
     def is_active(self) -> bool:
-        """是否保留在现行规则集（剔除已失效；待人工核验保留）。"""
-        return not self.is_invalidated
+        """是否保留在现行规则集（剔除已失效与 curation 出局；待人工核验保留）。"""
+        return not self.is_invalidated and not self.curated_out
 
 
 def display_priority_key(record: RuleRecord) -> tuple[int, int, int]:

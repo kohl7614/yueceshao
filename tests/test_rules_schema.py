@@ -116,3 +116,31 @@ def test_data_path_comes_from_config(tmp_path: Path) -> None:
     assert len(load_store_from_config(config_file).records) == 10
     with pytest.raises(FileNotFoundError, match="config.example.json"):
         load_config(tmp_path / "missing.json")
+
+
+def test_curation_field_excludes_from_active() -> None:
+    """「负面清单口径」非空注记＝curation 出局：全量保留、现行规则集剔除。"""
+    base = {
+        "条款原文逐字": "测试条款原文",
+        "出处文号+条款号": "〔测试样例〕〔2026〕1号第一条",
+        "条款号": "一",
+        "承接列举": False,
+        "层级": "省",
+        "所在文件效力状态": "有效",
+        "负面清单载体文件": False,
+        "等价组建议": {"组号": "未分组", "组名": "", "组类型": ""},
+        "溯源_文件序号": 1,
+        "溯源_文号": "〔测试样例〕〔2026〕1号",
+        "溯源_标题": "测试文件",
+        "溯源_发布机关": "测试机关",
+        "溯源_发布日期": "2026-01-01",
+        "溯源_类别": "资金管理办法",
+        "组裁定": "待人工",
+    }
+    curated = dict(base, 负面清单口径="排除（curation-测试：非负面清单范畴）")
+    records = records_from_dicts([base, curated])
+    assert records[0].curated_out is False and records[0].is_active is True
+    assert records[1].curated_out is True and records[1].is_active is False
+    store = RuleStore(records)
+    assert len(store.records) == 2                      # 全量保留（可溯源）
+    assert all(r.source_ref == base["出处文号+条款号"] for r in store.active_records())

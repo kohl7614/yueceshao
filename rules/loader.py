@@ -86,6 +86,9 @@ def _record_from_dict(item: dict) -> RuleRecord:
         doc_date=str(_expect(item, "溯源_发布日期")),
         doc_category=str(_expect(item, "溯源_类别")),
         group_decision=str(_expect(item, "组裁定")),
+        # 「负面清单口径」为 curation 出局标注（非空即出局，2026-11-02 起新增，旧数据无此字段）；
+        # 不进 _FIELD_MAP：它不是逐字改名，而是"非空注记→出局"语义
+        curated_out=bool(str(item.get("负面清单口径") or "").strip()),
     )
 
 
