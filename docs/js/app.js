@@ -25,6 +25,7 @@
 
   let activeCaseId = null;
   let analyzeTimer = null;
+  let analyzeFallbackTimer = null;
 
   /* ---------- 工具函数 ---------- */
   function el(tag, className, text) {
@@ -380,6 +381,7 @@
 
   /* ---------- 模拟体检过程（演示动画，非真实推理） ---------- */
   function playAnalyze(onDone) {
+    clearTimeout(analyzeFallbackTimer);
     checkBtn.disabled = true;
     reportWrap.hidden = true;
     notice.hidden = true;
@@ -414,13 +416,14 @@
       }
     }, 520);
     /* 兜底：极端节流环境（后台标签页等）下计时器停摆，也保证结果最终出现 */
-    setTimeout(function () {
+    analyzeFallbackTimer = setTimeout(function () {
       if (!analyzePanel.hidden) finishAnalyze(onDone);
     }, 520 * 4 + 900);
   }
 
   function finishAnalyze(onDone) {
     clearInterval(analyzeTimer);
+    clearTimeout(analyzeFallbackTimer);
     checkBtn.disabled = false;
     analyzePanel.hidden = true;
     onDone();
@@ -487,7 +490,13 @@
   randomBtn.addEventListener("click", function () {
     let pool = PRESET_CASES;
     if (activeCaseId && PRESET_CASES.length > 1) {
-      pool = PRESET_CASES.filter(function (c) { return c.id !== activeCaseId; });
+      const others = PRESET_CASES.filter(function (c) { return c.id !== activeCaseId; });
+      /* 排除当前项后仅剩 1 条或为空时降级回全池，保证随机性/可用性（当前 3 条案例不会触发，纯防御） */
+      if (others.length > 1) pool = others;
+    }
+    if (!pool.length) {
+      setStatus("暂无可抽取的典型案例，请直接选择下方卡片。", true);
+      return;
     }
     const c = pool[Math.floor(Math.random() * pool.length)];
     input.value = c.inputText;
@@ -507,6 +516,7 @@
     reportWrap.hidden = true;
     notice.hidden = true;
     clearInterval(analyzeTimer);
+    clearTimeout(analyzeFallbackTimer);
     analyzePanel.hidden = true;
     checkBtn.disabled = false;
     input.focus();
