@@ -110,7 +110,7 @@ def test_data_path_comes_from_config(tmp_path: Path) -> None:
     shutil.copy(FIXTURE, tmp_path / "rules_sample.json")
     config_file = tmp_path / "config.json"
     config_file.write_text(
-        json.dumps({"data_repo_path": str(tmp_path), "rules_terms_file": "rules_sample.json"}),
+        json.dumps({"data_repo": str(tmp_path), "rules_terms_file": "rules_sample.json"}),
         encoding="utf-8",
     )
     assert len(load_store_from_config(config_file).records) == 9

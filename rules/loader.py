@@ -113,7 +113,7 @@ def load_config(config_path: Path | None = None) -> dict:
 def load_store_from_config(config_path: Path | None = None) -> RuleStore:
     """按 config.json 配置的数据仓路径加载规则库（加载统计见 RuleStore.stats）。"""
     config = load_config(config_path)
-    data_root = Path(config["data_repo_path"])
+    data_root = Path(config["data_repo"])
     data_file = data_root / config["rules_terms_file"]
     logger.info("加载规则源文件：%s", data_file)
     return RuleStore(load_records(data_file))
