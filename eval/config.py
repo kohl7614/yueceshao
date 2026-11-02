@@ -124,10 +124,30 @@ class AblationSwitches:
         """从环境变量读取开关，变量名形如 ``YUECESHAO_ABLATION_RERANK=0``。
 
         仅识别 ``1/true/yes/on`` 与 ``0/false/no/off``，其余取值视为配置错误。
+
+        带前缀但后缀不是合法开关名的变量同样抛错，例如手滑写成
+        ``YUECESHAO_ABLATION_RERANKK``。只遍历 :data:`SWITCH_NAMES` 会把这类拼写
+        错误静默吞掉：使用者以为关掉了 rerank，实际它仍开着，消融组的结论直接失真。
+        这与 :meth:`from_mapping` / :meth:`from_json_file` 的严格性保持一致。
         """
         env = os.environ if environ is None else environ
         truthy = {"1", "true", "yes", "on"}
         falsy = {"0", "false", "no", "off"}
+
+        unknown_env_names = sorted(
+            key
+            for key in env
+            if key.upper().startswith(prefix.upper())
+            and key[len(prefix):].lower() not in SWITCH_DOCS
+        )
+        if unknown_env_names:
+            raise ValueError(
+                "环境变量里的消融开关名无法识别："
+                f"{', '.join(unknown_env_names)}；"
+                "合法取名："
+                f"{', '.join(prefix + name.upper() for name in SWITCH_NAMES)}"
+            )
+
         overrides: dict[str, bool] = {}
         for name in SWITCH_NAMES:
             raw = env.get(f"{prefix}{name.upper()}")
