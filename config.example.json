@@ -1,0 +1,4 @@
+{
+  "data_repo_path": "/请替换为本地政策语料数据仓根目录（如 /path/to/04_政策语料）",
+  "rules_terms_file": "00_工作区/负面清单_条款归并.json"
+}
