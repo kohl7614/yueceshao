@@ -13,16 +13,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: 安装依赖（如存在）
+      - name: 安装依赖
         run: |
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            echo "尚无 requirements.txt，跳过依赖安装"
+            echo "尚无 requirements.txt，跳过项目依赖安装"
           fi
+          pip install pytest
       - name: 跑测试（如存在）
         run: |
-          if compgen -G "**/test_*.py" > /dev/null || compgen -G "tests/test_*.py" > /dev/null; then
+          if find . -name "test_*.py" -not -path "./.git/*" | grep -q .; then
             python -m pytest -q
           else
             echo "尚无测试文件，CI 通过（首个功能 PR 必须带入测试）"
