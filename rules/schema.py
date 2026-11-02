@@ -30,6 +30,9 @@ _EFFECT_RANK: dict[str, int] = {EFFECT_VALID: 2, EFFECT_PENDING: 1, EFFECT_INVAL
 # 未分组标记（等价组建议.组号 为「未分组」时的归一值）
 GROUP_NONE = "未分组"
 
+# 组类型常量（取值与数据仓字段「等价组建议.组类型」一致）
+GROUP_TYPE_STRUCTURE = "结构标注"  # 总括句等结构性标注：不参与匹配，仅作溯源
+
 
 @dataclass(frozen=True, slots=True)
 class RuleRecord:

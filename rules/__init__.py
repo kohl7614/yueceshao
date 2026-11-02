@@ -2,7 +2,7 @@
 
 - schema.py：规则数据结构（RuleRecord）与规则库容器（RuleStore）；
 - loader.py：从数据仓条款归并 json 加载（效力过滤、等价组索引）；
-- engine.py：确定性匹配引擎（jieba + 自建禁止用途词典共现）；lexicon.py：禁止用途词典。
+- engine.py：确定性匹配引擎（自建禁止用途词典词表共现，无 LLM、无分词依赖）；lexicon.py：禁止用途词典。
 红线遵守：本包不包含政策语料原文；数据仓位置读 config.json。
 """
 

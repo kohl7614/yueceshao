@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from rules.engine import MatchResult, NegRuleMatcher, render_hits
-from rules.loader import load_records
+from rules.loader import load_records, records_from_dicts
 from rules.schema import RuleStore
 
 FIXTURE = Path(__file__).parent / "fixtures" / "rules_sample.json"
@@ -48,6 +48,38 @@ def test_no_terms_no_hit(matcher: NegRuleMatcher) -> None:
     assert matcher.match("").hits == ()
 
 
+def test_term_present_but_no_matching_rule(matcher: NegRuleMatcher) -> None:
+    """描述含禁止用途词、但无任何现行规则同概念组 → 零命中（有词≠有命中）。"""
+    result = matcher.match("项目拟偿还银行贷款本息")
+    assert result.hits == ()
+    assert "贷款" in result.description_terms
+
+
+def test_structure_annotation_group_excluded() -> None:
+    """结构标注组（总括句）不参与匹配，结构噪音不进命中提示。"""
+    record = {
+        "条款原文逐字": "测试样例条款：帮扶资金不得用于以下测试性禁止用途：楼堂馆所建设（人造样例，非真实政策原文）。",
+        "出处文号+条款号": "〔测试样例〕省E-011号 第一条",
+        "条款号": "一",
+        "承接列举": False,
+        "层级": "省",
+        "所在文件效力状态": "有效",
+        "等价组建议": {"组号": "测试总括句", "组名": "总括句", "组类型": "结构标注"},
+        "负面清单载体文件": True,
+        "溯源_文件序号": 11,
+        "溯源_文号": "〔测试样例〕省E-011号",
+        "溯源_标题": "测试样例文件十一（人造数据）",
+        "溯源_发布机关": "测试样例机关",
+        "溯源_发布日期": "2024-11-01",
+        "溯源_类别": "测试样例类别",
+        "组裁定": "接受（人造等价组）",
+    }
+    matcher = NegRuleMatcher(RuleStore(records_from_dicts([record])))
+    result = matcher.match("拟将项目资金用于测试性楼堂馆所建设")
+    assert result.hits == ()
+    assert "楼堂馆所" in result.description_terms
+
+
 def test_invalidated_rule_excluded(matcher: NegRuleMatcher) -> None:
     """已失效条款不参与匹配（描述侧识别到术语也不命中）。"""
     result = matcher.match("拟安排发放工资及人员经费")
@@ -79,7 +111,7 @@ def test_render_wording_discipline(matcher: NegRuleMatcher) -> None:
     assert "命中提示" in text and "建议对照原文" in text
     for banned in ("违规", "不合规", "可以申报", "合规"):
         assert banned not in text
-    assert "〔测试样例〕省A-002号" in text  # 文号由元数据注入
+    assert "〔测试样例〕省A-002号二（省，有效）" in text  # 命中条款带层级与效力标注
     assert "测试性楼堂馆所" in text        # 条款原文逐字展示
 
 
