@@ -691,7 +691,8 @@ class QualityGate:
         if not result.hits:
             return GateDecision(False, "empty_candidates", 0.0, cfg.tau, HONEST_EMPTY)
 
-        top = result.hits[0].rerank_score
+        # 取最高分而不取 hits[0]：门控不依赖入参已按分数降序（手写乱序也能判对）
+        top = max(hit.rerank_score for hit in result.hits)
         if not math.isfinite(top):
             # 纵深防御：非有限分数在 rerank() 里已被压到 0，但手写构造的
             # RerankResult 可能绕过那一层。NaN < tau 恒为 False，必须先收口
