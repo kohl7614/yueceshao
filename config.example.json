@@ -18,6 +18,14 @@
     "device": "cpu",
     "batch_size": 16
   },
+  "_retrieval_说明": "检索段（rag/retriever.py 的 RetrievalConfig.from_config 读取，缺键回落代码默认值）：top_k 返回条数（给重排用可调大）；enable_temporal_filter 时效硬过滤开关（默认开，关掉仅用于消融对照）；exclude_categories 检索端排除的类别（红线④，默认排除审计公告）；exclude_preamble/exclude_appendix 是否排除前言块/附录块（默认保留）。",
+  "retrieval": {
+    "top_k": 10,
+    "enable_temporal_filter": true,
+    "exclude_categories": ["审计公告"],
+    "exclude_preamble": false,
+    "exclude_appendix": false
+  },
   "reranker": {
     "model_name": "BAAI/bge-reranker-v2-m3",
     "model_dir": "models/bge-reranker-v2-m3",
