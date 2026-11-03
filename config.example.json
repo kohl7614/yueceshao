@@ -26,6 +26,16 @@
     "exclude_preamble": false,
     "exclude_appendix": false
   },
+  "hybrid": {
+    "_说明": "BM25＋稠密 RRF 融合（A5）。rrf_k 与两路权重属 T2 待评测定稿项，此处为手册起步值。",
+    "top_k": 10,
+    "dense_k": 40,
+    "bm25_k": 40,
+    "rrf_k": 60,
+    "dense_weight": 0.5,
+    "sparse_weight": 0.5,
+    "enable_temporal_filter": true
+  },
   "reranker": {
     "model_name": "BAAI/bge-reranker-v2-m3",
     "model_dir": "models/bge-reranker-v2-m3",
