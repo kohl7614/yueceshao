@@ -586,6 +586,7 @@ def test_single_route_fusion_score_is_normalized(
     hybrid_records: list[dict[str, Any]], tokenizer: PolicyTokenizer
 ) -> None:
     """只有一路有结果时权重归一为 1.0，融合分不被打折（否则跨查询不可比）。"""
+    # 方向一：稀疏侧空 → 稠密侧权重归一 1.0
     sparse = BM25Index(hybrid_records, tokenizer=tokenizer)
     dense = FakeDense([make_hit("1-0001")])
     # 用一串在中文语料里不可能出现的词，确保稀疏侧返回空
@@ -594,6 +595,16 @@ def test_single_route_fusion_score_is_normalized(
     result = retriever.retrieve("zzzzqqqq")
 
     assert result.sparse_count == 0
+    assert result.hits[0].fusion_score == pytest.approx(1.0 / 61, rel=1e-6)
+
+    # 方向二：稠密侧空 → 稀疏侧权重同样归一 1.0（对称，不能仍按 0.5 打折）
+    sparse = BM25Index(hybrid_records, tokenizer=tokenizer)
+    dense = FakeDense([])
+    retriever = HybridRetriever(dense, sparse, HybridConfig(top_k=5, bm25_k=5))
+
+    result = retriever.retrieve("产业园申报材料清单")
+
+    assert result.dense_count == 0
     assert result.hits[0].fusion_score == pytest.approx(1.0 / 61, rel=1e-6)
 
 

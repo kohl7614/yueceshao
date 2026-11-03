@@ -770,14 +770,19 @@ class HybridRetriever:
         dense_score = {hit.chunk_id: hit.score for hit in dense_hits}
         bm25_score = dict(sparse_pairs)
 
+        # 只有一路有结果时权重归一为 1.0（两侧对称：任一路空都归 1）：若仍按
+        # dense_weight/sparse_weight 打折，融合分会整体缩水一半，跨查询不可比
+        has_dense = bool(dense_ids)
+        has_sparse = bool(sparse_ids)
+        rankings = [dense_ids, sparse_ids] if has_dense and has_sparse else (
+            [dense_ids] if has_dense else [sparse_ids]
+        )
         fused = rrf_fuse(
-            [dense_ids, sparse_ids] if sparse_ids else [dense_ids],
+            rankings,
             rrf_k=cfg.rrf_k,
-            # 只有一路有结果时权重归一为 1.0：若仍按 dense_weight=0.5 打折，
-            # 融合分会整体缩水一半，跨查询／跨配置就不可比了
             weights=(
                 [cfg.dense_weight, cfg.sparse_weight]
-                if sparse_ids
+                if has_dense and has_sparse
                 else [1.0]
             ),
             limit=limit,
