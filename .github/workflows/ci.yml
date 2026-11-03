@@ -28,3 +28,17 @@ jobs:
           else
             echo "尚无测试文件，CI 通过（首个功能 PR 必须带入测试）"
           fi
+
+  # 静态检查（建议模式）：按 .ruff.toml 报告存量问题，不阻塞任何 PR。
+  # 存量清零后：删除 continue-on-error 与 --statistics，转强制门。
+  lint:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - name: ruff 检查（编码规范静态化，建议模式）
+        run: ruff check . --statistics
