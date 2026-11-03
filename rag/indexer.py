@@ -7,10 +7,10 @@ embedding（Qwen3-Embedding-0.6B）。对应《粤策哨开发手册 v1.0》§3.
 
 - 入库：chunk 原文进 ``documents``、向量进 ``embeddings``、可过滤字段进 ``metadatas``；
 - 封装：文档侧与查询侧分开编码（查询侧带 Qwen3 的指令前缀），权重首次编码时才加载；
-- 模式：增量（幂等 upsert＋跳过已入库 id，可断点续跑）与全量重建（先删集合再写）；
-- 红线④兜底：``category == 审计公告`` 的 chunk 一律拒绝入库。loader 已过滤一次，
-  索引层必须再挡一次——审计公告是评测出卷集，进索引就等于答案泄露，这一条不能
-  只靠上游守着。
+- 模式：增量（按内容指纹续跑）与全量重建（先删集合再写）；
+- 红线④兜底：``category == 审计公告`` 的 chunk 一律拒绝入库，并在每次运行开头把集合里
+  遗留的审计公告块清出去。loader 已过滤一次，索引层必须再挡一次——审计公告是评测出卷集，
+  进索引就等于答案泄露，这一条不能只靠上游守着。
 
 模块边界
 --------
@@ -24,11 +24,20 @@ Chroma 的 ``metadatas`` 只接受 ``str/int/float/bool`` 标量：``None``、�
 抛错，且不同版本对 ``None`` 的处理不一致。故入库前统一收敛（:func:`scalarize_metadata`）：
 空值转空串，非标量丢弃——这样 retriever 才能稳定地写 ``where={"is_current": True}``
 做时效硬过滤（A6）。
+
+为什么续跑要比内容指纹而不是只比 id
+------------------------------------
+``chunk_id`` 是 ``{序号}-{顺序号}``，政策修订后正文变了、效力改判后 ``is_current``
+变了，id 却不变。只看 id 会跳过这些块，库里留着旧的 ``is_current=True``——A6 硬过滤
+就会把已失效条款当现行条款放行，而这类错误在报告里看不出来。故每块落一个
+``content_hash``（正文＋元数据的指纹），指纹一致才跳过。
 """
 
 import argparse
+import hashlib
 import json
 import logging
+import random
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,9 +61,16 @@ REQUIRED_METADATA: tuple[str, ...] = (
     "category",
     "validity",
     "is_current",
+    "publish_date",
     "has_doc_no",
 )
-"""验收用的必备元数据字段（抽检对照表）；与 chunker 的 ``as_metadata()`` 对齐。"""
+"""验收用的必备元数据字段（抽检对照表）；与 chunker 的 ``as_metadata()`` 对齐。
+
+``publish_date`` 必须在列：报告②段要标注依据条款的生效日期，缺了它渲染层就只能留空。
+"""
+
+CONTENT_HASH_KEY = "content_hash"
+"""内容指纹的元数据键：续跑时用来判断「id 相同但内容已变」。"""
 
 DEFAULT_QUERY_INSTRUCTION = "给定一个涉农资金申报项目描述，检索适用于该项目的政策条款"
 """Qwen3-Embedding 的查询指令（非对称检索的任务描述）。"""
@@ -74,6 +90,30 @@ def format_query(text: str, instruction: str = DEFAULT_QUERY_INSTRUCTION) -> str
     :return: 可直接送进模型的字符串
     """
     return f"Instruct: {instruction}\nQuery:{text}"
+
+
+def content_hash(text: str, metadata: Mapping[str, Any]) -> str:
+    """算一块内容的指纹：正文 + 全部元数据。
+
+    为什么不能只按 ``chunk_id`` 判断已入库：政策修订后正文会变、效力改判后
+    ``is_current`` 会变，而 ``chunk_id``（``{序号}-{顺序号}``）不变。若续跑只看 id，
+    库里会留着旧的 ``is_current=True``，A6 时效硬过滤就会把已失效条款当现行条款放行。
+    把正文与元数据一起哈希，内容一变就重写。
+
+    :param text: 入库文本（含层级头）
+    :param metadata: 已扁平化的元数据
+    :return: 16 位十六进制摘要（够用且不撑大元数据）
+    """
+    payload = {
+        "text": text,
+        "metadata": {
+            str(key): value
+            for key, value in sorted(metadata.items())
+            if key != CONTENT_HASH_KEY
+        },
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
 def scalarize_metadata(
@@ -154,7 +194,10 @@ def to_record(raw: ChunkRecord | Mapping[str, Any] | Any) -> ChunkRecord:
         raise ValueError(f"chunk {chunk_id} 入库文本为空")
 
     flattened = scalarize_metadata(metadata, chunk_id=chunk_id)
-    flattened.setdefault("chunk_id", chunk_id)
+    # 强制覆盖而不是 setdefault：映射输入可能自带一个与顶层不一致的 chunk_id，
+    # 那样 Chroma 的 id 与元数据里的 chunk_id 会对不上，引用渲染时溯源就错了。
+    flattened["chunk_id"] = chunk_id
+    flattened[CONTENT_HASH_KEY] = content_hash(text, flattened)
     return ChunkRecord(chunk_id=chunk_id, text=text, metadata=flattened)
 
 
@@ -186,7 +229,13 @@ class EmbedderConfig:
 
 @dataclass(frozen=True)
 class IndexConfig:
-    """入库参数，对应 ``config.example.json`` 的 ``index`` 段。"""
+    """入库参数，对应 ``config.example.json`` 的 ``index``／``embedding`` 段。
+
+    两个 batch_size 语义不同，别混：
+    - :attr:`batch_size`（``index.batch_size``，缺省跟随 embedding）：一次写库/一次编码调用的块数；
+    - :attr:`EmbedderConfig.batch_size`（``embedding.batch_size``）：模型内部的编码批大小。
+    前者只影响写库节奏与内存占用，后者影响编码吞吐。
+    """
 
     persist_dir: Path = Path(".chroma")
     collection: str = "yueceshao_clauses"
@@ -199,11 +248,12 @@ class IndexConfig:
         """从整份配置构造；``index`` 段缺字段回落到默认值。"""
         section = _section(raw, "index")
         embedding = EmbedderConfig.from_config(raw)
+        batch_size = section.get("batch_size")
         return cls(
             persist_dir=Path(str(section.get("persist_dir") or ".chroma")),
             collection=str(section.get("collection") or "yueceshao_clauses"),
             distance=str(section.get("distance") or "cosine"),
-            batch_size=embedding.batch_size,
+            batch_size=int(batch_size) if batch_size else embedding.batch_size,
             embedding=embedding,
         )
 
@@ -306,16 +356,24 @@ class VectorStore(Protocol):
         """集合内已有的 chunk_id。"""
         ...
 
+    def hashes(self) -> dict[str, str]:
+        """已有块的内容指纹：``{chunk_id: content_hash}``，供续跑判断内容是否变化。"""
+        ...
+
     def upsert(self, records: Sequence[ChunkRecord], vectors: Sequence[Sequence[float]]) -> None:
         """按 chunk_id 幂等写入。"""
         ...
 
-    def sample(self, limit: int = 10) -> list[tuple[str, dict[str, Any]]]:
-        """取前 ``limit`` 块（id, 元数据）用于抽检。"""
+    def sample(self, limit: int = 10, offset: int = 0) -> list[tuple[str, dict[str, Any]]]:
+        """取一段（id, 元数据）用于抽检。"""
+        ...
+
+    def purge(self, where: Mapping[str, Any]) -> int:
+        """按元数据条件删除，返回删除条数（红线④清库用）。"""
         ...
 
     def reset(self) -> None:
-        """清空集合。"""
+        """清空集合；清不干净必须抛错，不允许静默成功。"""
         ...
 
 
@@ -361,16 +419,22 @@ class ChromaStore:
 
     def ids(self) -> set[str]:
         """集合内全部 chunk_id（分页读取）。"""
-        found: set[str] = set()
+        return set(self.hashes())
+
+    def hashes(self) -> dict[str, str]:
+        """已有块的内容指纹（分页读取）；没有指纹的老块返回空串。"""
+        found: dict[str, str] = {}
         offset = 0
         while True:
             page = self.collection.get(
-                limit=self.PAGE_SIZE, offset=offset, include=[]
+                limit=self.PAGE_SIZE, offset=offset, include=["metadatas"]
             )
             ids = page.get("ids") or []
             if not ids:
                 return found
-            found.update(str(item) for item in ids)
+            metadatas = page.get("metadatas") or [{} for _ in ids]
+            for chunk_id, metadata in zip(ids, metadatas):
+                found[str(chunk_id)] = str((metadata or {}).get(CONTENT_HASH_KEY, ""))
             if len(ids) < self.PAGE_SIZE:
                 return found
             offset += len(ids)
@@ -386,9 +450,9 @@ class ChromaStore:
             metadatas=[record.metadata for record in records],
         )
 
-    def sample(self, limit: int = 10) -> list[tuple[str, dict[str, Any]]]:
-        """取前 ``limit`` 块用于元数据抽检。"""
-        page = self.collection.get(limit=limit, include=["metadatas"])
+    def sample(self, limit: int = 10, offset: int = 0) -> list[tuple[str, dict[str, Any]]]:
+        """取一段 ``limit`` 块用于元数据抽检。"""
+        page = self.collection.get(limit=limit, offset=offset, include=["metadatas"])
         ids = page.get("ids") or []
         metadatas = page.get("metadatas") or []
         return [
@@ -396,17 +460,33 @@ class ChromaStore:
             for chunk_id, metadata in zip(ids, metadatas)
         ]
 
+    def purge(self, where: Mapping[str, Any]) -> int:
+        """按元数据条件删除，返回删除条数。"""
+        condition = dict(where)
+        existing = self.collection.get(where=condition, include=[])
+        removed = len(existing.get("ids") or [])
+        if removed:
+            self.collection.delete(where=condition)
+        return removed
+
     def reset(self) -> None:
         """删除并重建集合（全量重建用）。
 
-        集合不存在时直接跳过：各版本 chromadb 抛出的异常类型不一致，这里按「删不掉
-        就重建」处理，随后立即重建集合即可。
+        集合不存在时跳过删除（各版本 chromadb 抛出的异常类型不一致），但**删完必须
+        回读确认是空的**：早先版本在这里吞掉所有异常，一旦删除失败，后续以
+        ``resume=True`` 跑就会把「全量重建」静默降级成「全部跳过」并正常退出。
         """
         try:
             self.client.delete_collection(self.config.collection)
         except Exception as error:  # noqa: BLE001 - 版本差异兜底，见 docstring
             logger.debug("删除集合 %s 未成功（可能不存在）：%s", self.config.collection, error)
         self._collection = None
+        remaining = self.count()
+        if remaining:
+            raise RuntimeError(
+                f"全量重建失败：集合 {self.config.collection} 删除后仍有 {remaining} 条，"
+                "请检查 persist_dir 写权限或手动删除后重试"
+            )
 
     def close(self) -> None:
         """释放句柄（持久化客户端落盘由 chromadb 自行管理，这里只清引用）。"""
@@ -423,19 +503,25 @@ class IndexReport:
 
     total: int = 0
     indexed: int = 0
+    updated: int = 0
+    """``chunk_id`` 已存在但内容指纹变了、被重写的块数（政策修订／效力改判）。"""
+
     skipped_existing: int = 0
     skipped_audit: int = 0
     skipped_invalid: int = 0
+    purged_audit: int = 0
+    """入库前从集合里清出的审计公告块数（红线④）。"""
+
     failed: int = 0
     collection_count: int = 0
 
     def summary(self) -> str:
         """一行摘要，供命令行与 PR 输出样例使用。"""
         return (
-            f"候选 {self.total} 块：新入库 {self.indexed}，"
-            f"已存在跳过 {self.skipped_existing}，审计公告拦截 {self.skipped_audit}，"
-            f"无效跳过 {self.skipped_invalid}，失败 {self.failed}；"
-            f"集合现有 {self.collection_count} 块"
+            f"候选 {self.total} 块：新入库 {self.indexed}，内容变更重写 {self.updated}，"
+            f"已是最新跳过 {self.skipped_existing}，审计公告拦截 {self.skipped_audit}，"
+            f"清出旧审计公告 {self.purged_audit}，无效跳过 {self.skipped_invalid}，"
+            f"失败 {self.failed}；集合现有 {self.collection_count} 块"
         )
 
 
@@ -449,22 +535,37 @@ def build_index(
 ) -> IndexReport:
     """把 chunk 记录编码后写入向量库。
 
-    断点续跑的实现：先读集合里已有的 ``chunk_id``，已入库的直接跳过；写入用幂等
-    ``upsert``，因此中途中断后重跑不会产生重复块。单批编码/写入失败只记失败数，
+    断点续跑的实现：先读集合里已有的 ``{chunk_id: 内容指纹}``，
+    - 指纹相同 → 跳过（已是最新）；
+    - 指纹不同 → 重写（政策修订、效力改判都会走到这里，否则库里会留着旧的
+      ``is_current=True``，A6 时效硬过滤就放行了失效条款）；
+    - 集合里没有 → 新写入。
+    写入用幂等 ``upsert``，中途中断后重跑不会产生重复块。单批编码/写入失败只记失败数，
     不中断整批（与 chunker「单篇失败不打断整批」的容错口径一致）。
+
+    每次运行开头会先按 ``category=审计公告`` 清理集合（红线④）：只拦新写入不够，
+    历史遗留的审计公告块同样不能留在索引里。
 
     :param records: chunk 记录，接受 ``Chunk`` 对象、映射或 :class:`ChunkRecord`
     :param embedder: 满足 :class:`Embedder` 协议的编码器
     :param store: 向量库封装
     :param config: 入库参数，默认 :class:`IndexConfig`
-    :param resume: ``True`` 跳过已入库块；``False`` 全量重写
+    :param resume: ``True`` 按内容指纹跳过已是最新的块；``False`` 全部重写
     :return: 统计结果
     """
     cfg = config or IndexConfig()
     report = IndexReport()
-    existing = store.ids() if resume else set()
+
+    report.purged_audit = store.purge({"category": AUDIT_CATEGORY})
+    if report.purged_audit:
+        logger.warning(
+            "集合中已有 %d 块审计公告，已清出索引（红线④）", report.purged_audit
+        )
+
+    existing = store.hashes() if resume else {}
 
     pending: list[ChunkRecord] = []
+    stale: set[str] = set()
     seen: set[str] = set()
     for raw in records:
         report.total += 1
@@ -478,9 +579,15 @@ def build_index(
             report.skipped_audit += 1
             logger.warning("chunk %s 属于审计公告，拒绝入库（红线④）", record.chunk_id)
             continue
-        if record.chunk_id in existing or record.chunk_id in seen:
+        if record.chunk_id in seen:
             report.skipped_existing += 1
             continue
+        previous = existing.get(record.chunk_id)
+        if previous is not None:
+            if previous == record.metadata.get(CONTENT_HASH_KEY):
+                report.skipped_existing += 1
+                continue
+            stale.add(record.chunk_id)
         seen.add(record.chunk_id)
         pending.append(record)
 
@@ -496,11 +603,18 @@ def build_index(
             report.failed += len(batch)
             logger.exception("第 %d 批入库失败，跳过该批 %d 块", number, len(batch))
             continue
-        report.indexed += len(batch)
+        for record in batch:
+            if record.chunk_id in stale:
+                report.updated += 1
+            else:
+                report.indexed += 1
         logger.debug("第 %d 批入库完成：%d 块", number, len(batch))
         if number % step == 0 or number == total_batches:
             logger.info(
-                "入库进度 %d/%d 批（已写入 %d 块）", number, total_batches, report.indexed
+                "入库进度 %d/%d 批（已写入 %d 块）",
+                number,
+                total_batches,
+                report.indexed + report.updated,
             )
 
     report.collection_count = store.count()
@@ -524,9 +638,8 @@ class MetadataAudit:
         """一行摘要。"""
         if self.ok:
             return f"抽检 {self.sampled} 块，元数据字段完整"
-        return (
-            f"抽检 {self.sampled} 块，{len(self.problems)} 块缺字段："
-            + "；".join(self.problems[:5])
+        return f"抽检 {self.sampled} 块，{len(self.problems)} 处问题：" + "；".join(
+            self.problems[:5]
         )
 
 
@@ -538,13 +651,28 @@ def check_metadata(
 ) -> MetadataAudit:
     """抽检集合里的元数据字段是否齐全。
 
+    两个「假绿」必须堵死：集合为空、或块数不足抽检要求时，一律判不通过——
+    否则全量入库失败后 ``--check`` 会打印「元数据字段完整」，验收项反而被掩盖。
+    抽样起点在集合内随机取，避免每次都只看同一篇文档的开头几块。
+
     :param store: 向量库封装
     :param sample: 抽检块数
     :param required: 必备字段
     :return: 抽检结果
     """
     audit = MetadataAudit()
-    for chunk_id, metadata in store.sample(sample):
+    total = store.count()
+    if total == 0:
+        audit.problems.append("集合为空，没有可抽检的块")
+        logger.error("元数据抽检 → %s", audit.summary())
+        return audit
+    if total < sample:
+        audit.problems.append(f"集合仅 {total} 块，不足抽检要求的 {sample} 块")
+
+    limit = min(sample, total)
+    random.seed(20261103)
+    offset = random.randrange(0, total - limit + 1) if total > limit else 0
+    for chunk_id, metadata in store.sample(limit, offset=offset):
         audit.sampled += 1
         missing = [name for name in required if name not in metadata]
         if missing:
@@ -669,12 +797,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         store.reset()
 
     embedder = Qwen3Embedder(index_config.embedding)
-    report = build_index(records, embedder=embedder, store=store, config=index_config)
-    print(report.summary())
+    report = build_index(
+        records,
+        embedder=embedder,
+        store=store,
+        config=index_config,
+        # 全量重建必须关掉续跑，否则删了集合又按指纹跳过，等于什么都没写
+        resume=not args.full_rebuild,
+    )
+    logger.info("结果 → %s", report.summary())
 
     if args.check:
         audit = check_metadata(store)
-        print(audit.summary())
         if not audit.ok:
             return 1
     return 0
