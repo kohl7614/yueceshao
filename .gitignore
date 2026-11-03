@@ -29,3 +29,7 @@ dist/
 
 # 系统
 .DS_Store
+
+# 评测跑批产物与本地消融配置（只提交 .example）
+runs/
+eval/ablation.json
