@@ -21,7 +21,7 @@ raw/
 # 向量库与本地模型权重（feat/rag-indexer 产出，体积大且可重建）
 .chroma/
 models/
-chunks*.jsonl
+*.jsonl
 
 # 前端
 node_modules/

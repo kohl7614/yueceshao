@@ -670,6 +670,7 @@ def check_metadata(
         audit.problems.append(f"集合仅 {total} 块，不足抽检要求的 {sample} 块")
 
     limit = min(sample, total)
+    random.seed(20261103)
     offset = random.randrange(0, total - limit + 1) if total > limit else 0
     for chunk_id, metadata in store.sample(limit, offset=offset):
         audit.sampled += 1
