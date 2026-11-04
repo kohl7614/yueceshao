@@ -27,7 +27,7 @@ pip install -r requirements.txt sentence-transformers
 python -m eval.calibration.calibrate_rerank --config config.json
 ```
 
-> `config.json` 里 `index.persist_dir` 若是相对路径，**相对路径按当前工作目录解析**——请确保在仓库根目录运行（`config.json` 里写的路径是相对于它的），不要从别处调用。
+> `config.json` 里 `index.persist_dir` 若是相对路径，**相对路径按当前工作目录解析**（不是按 `config.json` 所在位置）——请确保在索引对应的仓库根目录运行，不要从别处调用。
 >
 > 指错目录时 Chroma 会自动建一个空集合，脚本不会报错，只是每条查询都记 0.000 分。看到三组分数全是 0.000，先查索引而不是查分组标注。
 
