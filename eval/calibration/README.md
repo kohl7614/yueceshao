@@ -11,7 +11,9 @@
 | `queries-B组.txt` | B 组（近域）10 条，标定文档 §5 已全文列出 |
 | `queries-C组.txt` | C 组（完全域外）10 条，是「漏放」的计数来源之一 |
 
-A/B/C 三组共 40 条，全部入仓，`python -m eval.calibration.calibrate_rerank --config config.json` 可直接复现 `docs/rag-rerank-标定.md` §3 的分布与 τ 扫表。
+A/B/C 三组共 40 条，全部入仓。**在具备原始 18262 块索引的前提下**，`python -m eval.calibration.calibrate_rerank --config config.json` 可复现 `docs/rag-rerank-标定.md` §3 的分布与 τ 扫表。
+
+索引本身不入库（`.chroma/` 在 `.gitignore` 里，约 200 MB），所以「查询快照入仓」只保证**查询集可复现**，不保证分数可复现：换一份索引（不同语料版本、不同分块参数）跑出来的分布会漂移，此时只能重新标定、重新确认平台区，不能拿文档 §3 的数字当预期值。要逐位对齐文档 §3，需要与标定基线一致的索引——即 `#27` 分块器修正**之前**、含 718 篇、共 18262 块的那份（见文末口径提醒）。
 
 ## 用法
 
@@ -25,7 +27,9 @@ pip install -r requirements.txt sentence-transformers
 python -m eval.calibration.calibrate_rerank --config config.json
 ```
 
-> `config.json` 里 `index.persist_dir` 若是相对路径，**请确保在索引所在目录的上一级运行**；指错目录时 Chroma 会自动建一个空集合，脚本不会报错，只是每条查询都记 0.000 分。看到三组分数全是 0.000，先查索引而不是查分组标注。
+> `config.json` 里 `index.persist_dir` 若是相对路径，**相对路径按当前工作目录解析**——请确保在仓库根目录运行（`config.json` 里写的路径是相对于它的），不要从别处调用。
+>
+> 指错目录时 Chroma 会自动建一个空集合，脚本不会报错，只是每条查询都记 0.000 分。看到三组分数全是 0.000，先查索引而不是查分组标注。
 
 ## 输出
 
@@ -35,7 +39,7 @@ python -m eval.calibration.calibrate_rerank --config config.json
 
 ## 解读漏放率前必读：B 组标注偏宽
 
-B 组按设计是「近域但语料未覆盖」，但实测 10 条里有 **8 条最高分 ≥ 0.55**，且命中的是**确实相关的政策**——`docs/rag-rerank-标定.md` §5 已逐条核对：
+B 组按设计是「近域但语料未覆盖」，但实测 10 条里有 **8 条最高分 ≥ 0.55**，命中的多是**确实相关的政策**——`docs/rag-rerank-标定.md` §5 已逐条核对：
 
 | 结果 | 条数 | 说明 |
 |---|---|---|
