@@ -134,7 +134,10 @@ def build_meta_table(hits: Iterable[Any]) -> dict[str, ChunkMeta]:
             cid = str(hit.get("chunk_id") or hit.get("citation_id") or "")
             if not cid:
                 raise ChunkMetaImportError(f"元数据字典缺少 chunk_id/citation_id：{hit!r}")
-            meta = ChunkMeta.from_mapping(hit, citation_id=cid)
+            # 兼容两种 dict 形状：检索命中（chunk_id+text+嵌套 metadata）与裸 metadata
+            inner = hit.get("metadata")
+            meta = ChunkMeta.from_mapping(
+                inner if isinstance(inner, Mapping) else hit, citation_id=cid)
         else:
             meta = ChunkMeta.from_hit(hit)
         if meta.citation_id in table:
@@ -230,8 +233,13 @@ def build_report(
         SuggestionItem(text=check_llm_text(s.text, "④段 text")) for s in sections.suggestions
     )
 
+    # project_summary 是用户自述（非 LLM 生成）：只做非空校验，不套 LLM 文本防线——
+    # 申报人描述里引用真实文号或提到「合规」是合法输入，防线只约束 LLM 产物（预审 A2）。
+    summary_clean = project_summary.strip()
+    if not summary_clean:
+        raise CitationError("project_summary 不能为空")
     report = CheckupReport(
-        project_summary=check_llm_text(project_summary, "project_summary"),
+        project_summary=summary_clean,
         policy_items=tuple(policy_items),
         negative_hits=tuple(negative_hits),
         missing_items=tuple(missing_items),
