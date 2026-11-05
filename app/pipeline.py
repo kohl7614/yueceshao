@@ -1,16 +1,15 @@
-"""app/pipeline.py — 体检编排层：协议＋Mock 端到端实现（手册 §3.5 前置）。
+"""app/pipeline.py — 体检管线：协议＋Mock 组件＋LangGraph 编排（A12）。
 
-职责：把已合并的各模块串成一次完整体检——
+编排（LangGraph 状态图，见 app/graph.py）：
 
-    查询抽取 → 检索命中 → 规则命中 → 负面蕴含复核
-    → 生成（①③④段，run_with_retry 校验重试）→ 引用渲染 → 免责声明
+    parse → [retrieve ‖ rule_scan]（并行）→ entail → generate（A9 重试）→ render
 
 其中**真实执行**的部分（不依赖数据仓/索引/API）：gen.schema 的结构解析与
 防线、gen.validator 的四类校验与 A9 重试降级、gen.citation 的查表注入与
 置信填充、render_report 的四段文本与免责声明强制附加。
 **Mock 注入**的部分：检索命中对象、LLM 三段输出、②段规则命中——骨架阶段
-以夹具代替，真实适配器（rag 检索接索引／rules 引擎接数据仓／qwen API）由
-后续 PR 替换（CheckupPipeline 协议即替换点，接口不变）。
+以夹具代替，真实适配器（rag 检索接索引／rules 引擎接数据仓／qwen API）实现
+同一组组件回调（OrchestrationComponents）即替换，CheckupPipeline 协议不变。
 
 红线：Mock 夹具只用〔2099〕人造文号与自造条款原文（语料不入代码仓）；
 编排全程不产生任何结论性措辞；免责声明由渲染层保证（check_disclaimer 复核）。
@@ -24,16 +23,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from gen.citation import build_meta_table, build_report, render_report
-from gen.schema import (
-    DISCLAIMER_TEXT,
-    CheckupReport,
-    parse_extraction,
-)
-from gen.validator import (
-    check_disclaimer,
-    run_with_retry,
-)
+from app.graph import OrchestrationComponents, build_checkup_graph
+from gen.schema import DISCLAIMER_TEXT, CheckupReport
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +146,7 @@ class MockCheckupPipeline:
         self._generation_outputs = list(generation_outputs)
         self._entailment_json = entailment_json
         self._negative_hits = negative_hits
+        self._served = 0  # 已弹出的生成版次（run 时重置；直接调图也安全）
 
     # —— Mock 外部依赖（后续 PR 换成真实适配器）——
     def _extract(self, description: str) -> str:
@@ -181,48 +173,29 @@ class MockCheckupPipeline:
             return out
         return self._generation_outputs[-1]
 
-    # —— 编排（全真实链路）——
+    # —— 编排（LangGraph 状态图，A12；节点＝已合并模块真实调用）——
+    def components(self) -> OrchestrationComponents:
+        """暴露本 Mock 的组件回调集（供图构建；真实适配器同构替换）。"""
+        return OrchestrationComponents(
+            extract=self._extract,
+            retrieve=self._retrieve,
+            rule_scan=self._rule_scan,
+            entail_review=self._entail_review,
+            generate=self._generate,
+        )
+
     def run(self, description: str) -> PipelineResult:
         started = time.monotonic()
         self._served = 0
-
-        # 1. 查询抽取（结构解析真实校验）
-        extraction = parse_extraction(self._extract(description))
-
-        # 2. 检索命中 → 元数据表＋原文映射
-        hits = self._retrieve(description, extraction)
-        table = build_meta_table(hits)
-        chunk_texts = {h["chunk_id"]: h["text"] for h in hits}
-
-        # 3. 规则命中（②段；Mock 阶段由夹具给出）
-        negative_hits = self._rule_scan(description)
-
-        # 4. 负面蕴含复核（结果并入②段；骨架阶段夹具已合法，真实适配器 PR 接入）
-
-        # 5. 生成＋校验重试（A9 全真实：四类检查、反馈重试、降级）
-        outcome = run_with_retry(
-            lambda feedback: self._generate(description, self._extraction_json, "", feedback),
-            allowed=set(table.keys()),
-            chunk_texts=chunk_texts,
-        )
-
-        # 6. 引用渲染（查表注入＋置信填充，全真实）
-        report = build_report(description, outcome.delivered,
-                              negative_hits=negative_hits, table=table)
-        degraded_sections = outcome.failed_sections if outcome.degraded else ()
-        text = render_report(report, table, degraded_sections=degraded_sections)
-
-        # 7. 免责声明最后防线复核（渲染层唯一出口，此处双保险）
-        issues = check_disclaimer(text)
-        if issues:
-            logger.error("渲染成品缺少免责声明（不应发生）：%s", issues[0].message)
+        graph = build_checkup_graph(self.components())
+        final = graph.invoke({"description": description})
 
         elapsed = int((time.monotonic() - started) * 1000)
         return PipelineResult(
-            report=report,
-            rendered_text=text,
-            degraded=outcome.degraded,
-            attempts=outcome.attempts,
-            failed_sections=outcome.failed_sections,
+            report=final["report"],
+            rendered_text=final["rendered_text"],
+            degraded=final["degraded"],
+            attempts=final["attempts"],
+            failed_sections=final["failed_sections"],
             elapsed_ms=elapsed,
         )
