@@ -23,7 +23,6 @@ from gen.schema import (
 from gen.validator import (
     DEGRADED_NOTICE,
     RetryOutcome,
-    ValidationIssue,
     apply_degradation,
     check_citation_existence,
     check_containment,
@@ -80,12 +79,14 @@ class TestCitationExistence:
 
 class TestContainment:
     def test_verbatim_quote_passes(self) -> None:
-        s = _sections(policy=(PolicyItem("[C1]", "条款明确帮扶资金「不得用于楼堂馆所建设」，与本项目无关", None),))
+        s = _sections(policy=(PolicyItem(
+            "[C1]", "条款明确帮扶资金「不得用于楼堂馆所建设」，与本项目无关", None),))
         assert check_containment(s, CHUNK_TEXTS) == ()
 
     def test_fabricated_quote_flagged(self) -> None:
         """编造引语（原文没有的「成句引文」）＝引用失真，必须拦下。"""
-        s = _sections(policy=(PolicyItem("[C1]", "条款规定「帮扶资金可以用于建房」，需注意", None),))
+        s = _sections(policy=(
+            PolicyItem("[C1]", "条款规定「帮扶资金可以用于建房」，需注意", None),))
         issues = check_containment(s, CHUNK_TEXTS)
         assert len(issues) == 1 and issues[0].check == "包含性"
 
@@ -117,7 +118,8 @@ class TestContainment:
 # ---------------------------------------------------------------------------
 
 class TestPosture:
-    @pytest.mark.parametrize("text", ["该项目合规", "本项目可以申报", "此做法违规", "属于不合规行为"])
+    @pytest.mark.parametrize(
+        "text", ["该项目合规", "本项目可以申报", "此做法违规", "属于不合规行为"])
     def test_forbidden_words_flagged(self, text: str) -> None:
         s = _sections(suggestions=(SuggestionItem(text),))
         issues = check_posture(s)
@@ -168,7 +170,8 @@ class TestValidateAll:
 class TestRunWithRetry:
     def test_first_pass_no_retry(self) -> None:
         good = json.dumps({
-            "policy_items": [{"citation": "[C1]", "summary": "与灌溉设施建设相关", "confidence": None}],
+            "policy_items": [
+                {"citation": "[C1]", "summary": "与灌溉设施建设相关", "confidence": None}],
             "missing_items": [{"citation": "[C2]", "name": "项目申报书", "note": "按指南核对"}],
             "suggestions": [{"text": "建议写明点位"}],
         }, ensure_ascii=False)
@@ -210,7 +213,10 @@ class TestRunWithRetry:
         （整体失败），由 test_parse_failure_also_retried 覆盖那条路径。
         """
         bad = json.dumps({
-            "policy_items": [{"citation": "[C1]", "summary": "条款明确「帮扶资金可以用于建造办公楼」，需注意", "confidence": None}],
+            "policy_items": [
+                {"citation": "[C1]",
+                 "summary": "条款明确「帮扶资金可以用于建造办公楼」，需注意",
+                 "confidence": None}],
             "missing_items": [{"citation": "[C2]", "name": "材料", "note": "依据"}],
             "suggestions": [],
         }, ensure_ascii=False)
@@ -223,6 +229,36 @@ class TestRunWithRetry:
         assert "①适用政策" in outcome.delivered.uncovered_sections
         # 其余通过的段保留（③段无问题应保留）
         assert outcome.delivered.missing_items != ()
+
+    def test_cross_round_fix_not_over_degraded(self) -> None:
+        """A1 回归：降级段只取最后一轮失败——跨轮已修复的段不得被历史 issues 牵连清空。
+
+        r1 ①段编造引语（挂）→ r2 ①修好、③段引语编造（挂）→ r3 同 r2 → 耗尽。
+        正确行为：只降级③段；①段最后一轮干净，必须保留。
+        """
+        bad_policy = json.dumps({
+            "policy_items": [
+                {"citation": "[C1]",
+                 "summary": "条款明确「帮扶资金可以用于建造办公楼」，需注意",
+                 "confidence": None}],
+            "missing_items": [{"citation": "[C2]", "name": "项目申报书", "note": "按指南核对"}],
+            "suggestions": [],
+        }, ensure_ascii=False)
+        bad_missing = json.dumps({
+            "policy_items": [{"citation": "[C1]", "summary": "与产业道路建设相关",
+                              "confidence": None}],
+            "missing_items": [
+                {"citation": "[C2]", "name": "项目申报书",
+                 "note": "应提交「项目申报书、实施方案和决议材料」"}],
+            "suggestions": [],
+        }, ensure_ascii=False)
+        payloads = iter([bad_policy, bad_missing, bad_missing])
+        outcome = run_with_retry(lambda fb: next(payloads), ALLOWED, CHUNK_TEXTS)
+        assert outcome.degraded and outcome.attempts == 3
+        assert outcome.failed_sections == ("③材料缺项",)
+        assert outcome.delivered.policy_items != ()      # ①段跨轮修好，保留
+        assert outcome.delivered.missing_items == ()     # ③段最后一轮失败，降级
+        assert "③材料缺项" in outcome.delivered.uncovered_sections
 
     def test_parse_failure_also_retried(self) -> None:
         """连 JSON 都解析失败的输出同样计入重试（校验器不信任任何环节）。"""
@@ -263,3 +299,26 @@ class TestApplyDegradation:
     def test_degraded_notice_constant(self) -> None:
         """降级标注文案存在且为诚实口径（渲染层引用）。"""
         assert "完整性校验" in DEGRADED_NOTICE and "仅供参考" in DEGRADED_NOTICE
+
+class TestRenderDegradedAnnotation:
+    def test_render_marks_degraded_sections(self) -> None:
+        """A9 渲染落点：降级段在成品文本中带显式标注（DEGRADED_NOTICE 口径）。"""
+        from gen.citation import ChunkMeta, build_report, render_report
+        meta_table = {
+            cid: ChunkMeta(citation_id=cid, doc_no="粤测农〔2099〕1号", clause_no="第一条",
+                           effective_date="2099-01-01", validity="有效", level="省",
+                           title="测试办法", is_current=True)
+            for cid in CHUNK_TEXTS
+        }
+        report = build_report(
+            "某项目",
+            _sections(policy=(PolicyItem("[C1]", "与灌溉设施建设相关", None),),
+                      missing=(MissingItem("[C2]", "项目申报书", "按指南核对"),),
+                      uncovered=("④修改建议",)),
+            negative_hits=(),
+            table=meta_table,
+        )
+        text = render_report(report, meta_table, degraded_sections=("④修改建议",))
+        assert "④ 修改建议〔已降级：未通过完整性校验，仅供参考〕" in text
+        assert "① 适用政策清单\n" in text  # 未降级段无标注
+        assert "① 适用政策清单〔已降级" not in text

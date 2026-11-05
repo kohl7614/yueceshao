@@ -262,11 +262,21 @@ def render_hit_line(hit: NegativeHit, table: Mapping[str, ChunkMeta]) -> str:
     return f"〔{hit.hit_type}〕{ref}｜命中词：{words}"
 
 
-def render_report(report: CheckupReport, table: Mapping[str, ChunkMeta]) -> str:
-    """CheckupReport → 四段式文本。免责声明在本函数强制附加（唯一出口）。"""
+def render_report(
+    report: CheckupReport,
+    table: Mapping[str, ChunkMeta],
+    degraded_sections: tuple[str, ...] = (),
+) -> str:
+    """CheckupReport → 四段式文本。免责声明在本函数强制附加（唯一出口）。
+
+    degraded_sections：校验器（gen.validator）重试耗尽后显式降级的段位清单——
+    对应段标题附加 DEGRADED_NOTICE 标注（A9「降级显式标注」的渲染落点）。
+    """
     lines: list[str] = [f"体检输入：{report.project_summary}", ""]
 
-    lines.append("① 适用政策清单")
+    lines.append("① 适用政策清单"
+                 + ("〔已降级：未通过完整性校验，仅供参考〕"
+                    if "①适用政策" in degraded_sections else ""))
     if report.policy_items:
         for i, item in enumerate(report.policy_items, 1):
             lines.append(f"{i}. {_ref_or_missing(item.citation, table)}〔{item.confidence}〕")
@@ -282,14 +292,18 @@ def render_report(report: CheckupReport, table: Mapping[str, ChunkMeta]) -> str:
         lines.append("· 未命中已收录的禁止性条款")
     lines.append("")
 
-    lines.append("③ 材料缺项清单（建议核对，非正式申报清单）")
+    lines.append("③ 材料缺项清单（建议核对，非正式申报清单）"
+                 + ("〔已降级：未通过完整性校验，仅供参考〕"
+                    if "③材料缺项" in degraded_sections else ""))
     if report.missing_items:
         lines.extend(f"· {m.name}——{m.note}（依据：{_ref_or_missing(m.citation, table)}）" for m in report.missing_items)
     else:
         lines.append("· 未识别到可列出的材料缺项")
     lines.append("")
 
-    lines.append("④ 修改建议")
+    lines.append("④ 修改建议"
+                 + ("〔已降级：未通过完整性校验，仅供参考〕"
+                    if "④修改建议" in degraded_sections else ""))
     if report.suggestions:
         lines.extend(f"· {s.text}" for s in report.suggestions)
     else:

@@ -9,6 +9,8 @@
    - 姿态禁语：FORBIDDEN_PHRASES 独立重扫（合规/可以申报/违规/不合规）；
    - 免责声明：渲染成品必须含 DISCLAIMER_TEXT（渲染层唯一出口的复核）。
 2. validate_all：四类汇总 → ValidationReport（passed＋逐条 issue，issue 带段位）。
+   标记存在性与姿态禁语在正常管线中会被 parse_generated 解析口前置拦截
+   （schema 快速失败），独立保留属纵深防御——覆盖绕过解析直接构造的场景。
 3. run_with_retry（A9）：generate 回调首次不带反馈、失败重试携带格式化失败原因；
    首次＋重试 ≤2（共至多 3 次）仍失败 → apply_degradation 显式降级：失败段条目
    清空＋声明未覆盖（①③）或清空（④），可安全进渲染——报告照给，但绝不含
@@ -23,7 +25,6 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
-from typing import Any
 
 from gen.schema import (
     DISCLAIMER_TEXT,
@@ -233,18 +234,20 @@ def run_with_retry(
     parse_fn 可注入替换（测试假回调／未来接真实 LLM 的适配层）。
     """
     issues_all: list[ValidationIssue] = []
+    last_round_issues: tuple[ValidationIssue, ...] = ()
     last_sections: GeneratedSections | None = None
+    last_feedback: str | None = None
     attempts = 0
     for attempt in range(max_retries + 1):
         attempts = attempt + 1
-        feedback = None if attempt == 0 else _last_feedback
-        raw = generate_fn(feedback)
+        raw = generate_fn(last_feedback if attempt else None)
         try:
             sections = parse_fn(raw, allowed)
         except SchemaError as exc:
             issue = ValidationIssue("结构解析", "整体", f"输出不符合 JSON 结构约定：{exc}")
             issues_all.append(issue)
-            _last_feedback = issue.format()
+            last_round_issues = (issue,)
+            last_feedback = issue.format()
             continue
         last_sections = sections
         report = validate_all(sections, allowed, chunk_texts)
@@ -252,10 +255,13 @@ def run_with_retry(
         if report.passed:
             return RetryOutcome(delivered=sections, degraded=False,
                                 attempts=attempts, issues=tuple(issues_all))
-        _last_feedback = report.feedback()
+        last_round_issues = report.issues
+        last_feedback = report.feedback()
 
-    # 重试耗尽 → 显式降级（失败段清空＋声明未覆盖；其余段保留）
-    failed = _failed_sections_of(issues_all)
+    # 重试耗尽 → 显式降级。降级段只取**最后一轮**的失败（预审 A1 修复：
+    # 用累计历史会把跨轮已修复的段一并误清——某段第 2 轮修好、第 3 轮败在
+    # 另一段时，它不应被牵连清空）；issues_all 全量保留供审计。
+    failed = _failed_sections_of(last_round_issues)
     delivered = apply_degradation(last_sections, failed) if last_sections else GeneratedSections(
         policy_items=(), missing_items=(), suggestions=(),
         uncovered_sections=(SECTION_FIRST, SECTION_MISSING),
