@@ -24,11 +24,11 @@ import csv
 import json
 import logging
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterable, Mapping, Sequence
 
 from eval.config import SWITCH_DOCS, SWITCH_NAMES, AblationSwitches
 from eval.dataset import EvalCase, RegistryError, load_cases, take

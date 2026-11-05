@@ -29,9 +29,9 @@ from __future__ import annotations
 import csv
 import logging
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from collections.abc import Iterable, Sequence
 
 __all__ = [
     "DatasetError",

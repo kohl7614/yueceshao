@@ -8,15 +8,13 @@ refs 提取正则、RulesPipeline 适配（假规则库注入，零数据仓依�
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
-from eval.dataset import DatasetError
-
 from eval.dataset import (
     COLUMN_ALIASES,
+    DatasetError,
     extract_refs_from_text,
     load_cases,
 )
