@@ -443,6 +443,13 @@ class RetrievalPlan:
     dense_hits: tuple[Hit, ...]
     rule_hits: tuple[RuleHit, ...]
     retrieval: RetrievalResult
+    carrier_hits: tuple[dict[str, Any], ...] = ()
+    """G01-G11 载体全集（②段蕴含复核的待审对象）。
+
+    与 ``hits`` 的区别：``hits`` 只保证"每个**新**标记都有块"；这里保证"每个**载体**都有一条块"，
+    即使它的条款已被检索命中或规则命中覆盖（那种情况复用同一标记、不重复追加进 hits）。
+    这两条链路必须分开：载体若只靠 hits 的 origin 过滤取，凡是复用标记的都会被静默漏掉。
+    """
 
 
 class RealComponents:
@@ -539,7 +546,9 @@ class RealComponents:
 
         negative_hits: list[NegativeHit] = []
         seen_negative: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
-        rule_markers: dict[tuple[int, str], str] = {}
+        # 键带上条款原文：同一 (文件, 条款号) 下可能有多个款级子块（不同原文），
+        # 只用 (文件, 条款号) 作键会让后一个静默共用前一个标记、整块丢失（issue #48）。
+        text_markers: dict[tuple[int, str, str], str] = {}
         next_index = len(retrieval.hits) + 1
         for rule_hit in match.hits:
             rule = rule_hit.rule
@@ -548,12 +557,13 @@ class RealComponents:
                 dense_markers.get((rule.doc_index, clause_index))
                 if clause_index is not None else None
             )
+            rule_key = (rule.doc_index, rule.clause_no, rule.clause_text)
             if marker is None:
-                marker = rule_markers.get((rule.doc_index, rule.clause_no))
+                marker = text_markers.get(rule_key)
             if marker is None:
                 marker = f"[C{next_index}]"
                 next_index += 1
-                rule_markers[(rule.doc_index, rule.clause_no)] = marker
+                text_markers[rule_key] = marker
                 hits.append(rule_orchestration_hit(rule, marker))
             words = matched_word_pairs(rule_hit)
             signature = (marker, words)
@@ -570,19 +580,18 @@ class RealComponents:
 
         # G01-G11 禁止用途载体：给②段蕴含复核的待审条款（origin=negative-list，
         # 不参与①段生成）。含禁止性措辞＋按原文去重 → ~11-30 项，一次 LLM 调用。
+        carrier_hits: list[dict[str, Any]] = []
         for carrier in self._negative_carriers():
-            clause_index = clause_no_to_index(carrier.clause_no)
-            marker = (
-                dense_markers.get((carrier.doc_index, clause_index))
-                if clause_index is not None else None
-            )
-            if marker is None:
-                marker = rule_markers.get((carrier.doc_index, carrier.clause_no))
+            carrier_key = (carrier.doc_index, carrier.clause_no, carrier.clause_text)
+            marker = text_markers.get(carrier_key)
             if marker is None:
                 marker = f"[C{next_index}]"
                 next_index += 1
-                rule_markers[(carrier.doc_index, carrier.clause_no)] = marker
+                text_markers[carrier_key] = marker
                 hits.append(rule_orchestration_hit(carrier, marker, origin=ORIGIN_NEGATIVE))
+            # 复用标记（该条款已被检索/规则命中覆盖）时只进复核清单，不重复追加进 hits
+            carrier_hits.append(
+                rule_orchestration_hit(carrier, marker or "", origin=ORIGIN_NEGATIVE))
 
         plan = RetrievalPlan(
             hits=tuple(hits),
@@ -590,10 +599,11 @@ class RealComponents:
             dense_hits=tuple(retrieval.hits),
             rule_hits=tuple(match.hits),
             retrieval=retrieval,
+            carrier_hits=tuple(carrier_hits),
         )
         logger.info(
-            "命中计划：[%d 块稠密 + %d 条规则]；%s",
-            len(retrieval.hits), len(match.hits), retrieval.summary())
+            "命中计划：[%d 块稠密 + %d 条规则 + %d 项 G01-G11 载体]；%s",
+            len(retrieval.hits), len(match.hits), len(carrier_hits), retrieval.summary())
         return plan
 
     # —— 编排图回调 ——
@@ -604,6 +614,15 @@ class RealComponents:
     def rule_scan(self, description: str) -> tuple[NegativeHit, ...]:
         """编排图规则回调：真负面清单全量扫描（确定性，无 LLM）。"""
         return self._plan(description).negative_hits
+
+    def _entail(self, description: str, hits: Sequence[dict[str, Any]]) -> str:
+        """②段蕴含复核：喂 **G01-G11 载体全集**（而不是"hits 里 origin=negative-list 的那些块"）。
+
+        两者不等价：若某载体的条款已被稠密检索或规则命中覆盖，适配器会复用它已有的标记、
+        不再追加新块，于是它不会以 origin=negative-list 出现在 hits 里——只按 hits 过滤就会把它
+        静默漏掉（issue #48）。故这里显式取计划里的载体全集。
+        """
+        return self._llm.entail_review(description, self._plan(description).carrier_hits)
 
     def _generate(
         self,
@@ -635,7 +654,7 @@ class RealComponents:
             extract=self._llm.extract,
             retrieve=self.retrieve,
             rule_scan=self.rule_scan,
-            entail_review=self._llm.entail_review,
+            entail_review=self._entail,
             generate=self._generate,
         )
 
