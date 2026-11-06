@@ -37,8 +37,6 @@ from gen.schema import (
     CONFIDENCE_EXPLICIT,
     CONFIDENCE_SUGGEST,
     DISCLAIMER_TEXT,
-    HIT_RULE,
-    HIT_SUSPECT,
     CheckupReport,
     GeneratedSections,
     MissingItem,
@@ -94,7 +92,7 @@ class ChunkMeta:
         return False
 
     @classmethod
-    def from_hit(cls, hit: Any) -> "ChunkMeta":
+    def from_hit(cls, hit: Any) -> ChunkMeta:
         """从检索侧命中对象构造（鸭子类型：需 ``chunk_id`` 与 ``metadata`` 映射）。"""
         chunk_id = getattr(hit, "chunk_id", None)
         metadata = getattr(hit, "metadata", None)
@@ -105,7 +103,7 @@ class ChunkMeta:
         return cls.from_mapping(metadata, citation_id=chunk_id)
 
     @classmethod
-    def from_mapping(cls, metadata: Mapping[str, Any], *, citation_id: str) -> "ChunkMeta":
+    def from_mapping(cls, metadata: Mapping[str, Any], *, citation_id: str) -> ChunkMeta:
         """从元数据字典构造；缺失字段按诚实口径补空（渲染时降级）。"""
         doc_no = str(metadata.get("doc_no") or metadata.get("文号") or "")
         validity = str(metadata.get("validity") or metadata.get("效力状态") or "")
@@ -118,7 +116,9 @@ class ChunkMeta:
             citation_id=citation_id,
             doc_no=doc_no,
             clause_no=str(metadata.get("clause_no") or metadata.get("条款号") or ""),
-            effective_date=str(metadata.get("effective_date") or metadata.get("生效日期") or metadata.get("发布日期") or ""),
+            effective_date=str(
+                metadata.get("effective_date") or metadata.get("生效日期")
+                or metadata.get("发布日期") or ""),
             validity=validity,
             level=str(metadata.get("level") or metadata.get("层级") or ""),
             title=str(metadata.get("title") or metadata.get("标题") or ""),
@@ -155,7 +155,9 @@ def format_reference(meta: ChunkMeta) -> str:
     if meta.has_doc_no:
         head = meta.doc_no + (f" {meta.clause_no}" if meta.clause_no else "")
     else:
-        head = (f"《{meta.title}》" + (f" {meta.clause_no}" if meta.clause_no else "")) if meta.title else "（来源未载文号与标题）"
+        head = (
+            (f"《{meta.title}》" + (f" {meta.clause_no}" if meta.clause_no else ""))
+            if meta.title else "（来源未载文号与标题）")
     bits = [head]
     if meta.level:
         bits.append(meta.level)
@@ -304,7 +306,9 @@ def render_report(
                  + ("〔已降级：未通过完整性校验，仅供参考〕"
                     if "③材料缺项" in degraded_sections else ""))
     if report.missing_items:
-        lines.extend(f"· {m.name}——{m.note}（依据：{_ref_or_missing(m.citation, table)}）" for m in report.missing_items)
+        lines.extend(
+            f"· {m.name}——{m.note}（依据：{_ref_or_missing(m.citation, table)}）"
+            for m in report.missing_items)
     else:
         lines.append("· 未识别到可列出的材料缺项")
     lines.append("")

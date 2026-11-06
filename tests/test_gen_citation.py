@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -96,9 +96,11 @@ class TestChunkMeta:
 
     def test_is_current_fallback_to_validity(self) -> None:
         """缺 is_current 字段时按效力推断（保守）。"""
-        m = ChunkMeta.from_mapping({"doc_no": "粤测农〔2099〕1号", "validity": "有效"}, citation_id="[C9]")
+        m = ChunkMeta.from_mapping(
+            {"doc_no": "粤测农〔2099〕1号", "validity": "有效"}, citation_id="[C9]")
         assert m.is_current
-        m2 = ChunkMeta.from_mapping({"doc_no": "粤测农〔2099〕1号", "validity": "已失效"}, citation_id="[C8]")
+        m2 = ChunkMeta.from_mapping(
+            {"doc_no": "粤测农〔2099〕1号", "validity": "已失效"}, citation_id="[C8]")
         assert not m2.is_current
 
     def test_build_table_rejects_mapping_without_id(self) -> None:

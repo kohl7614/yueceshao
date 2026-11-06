@@ -21,11 +21,10 @@ from textwrap import dedent
 import pytest
 
 from rag.chunker import (
-    Chunk,
-    ChunkConfig,
     STRUCTURE_CLAUSE,
     STRUCTURE_FLAT,
     STRUCTURE_SECTION,
+    ChunkConfig,
     check_clause_continuity,
     chunk_document,
     clause_sequence,
@@ -501,7 +500,9 @@ def test_real_document_clause_alignment(serial: int) -> None:
     assert chunks, "验收文件不应产出空结果"
 
     # 原文侧独立抽取：行首「第…条」，容忍字间空白
-    pattern = re.compile(r"^\s*第\s*([一二三四五六七八九十百零〇两\d][一二三四五六七八九十百零〇两\d\s]{0,10}?)\s*条")
+    pattern = re.compile(
+        r"^\s*第\s*([一二三四五六七八九十百零〇两\d]"
+        r"[一二三四五六七八九十百零〇两\d\s]{0,10}?)\s*条")
     expected: list[int] = []
     for line in text.splitlines():
         match = pattern.match(line)

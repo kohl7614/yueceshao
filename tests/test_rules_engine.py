@@ -58,7 +58,9 @@ def test_term_present_but_no_matching_rule(matcher: NegRuleMatcher) -> None:
 def test_structure_annotation_group_excluded() -> None:
     """结构标注组（总括句）不参与匹配，结构噪音不进命中提示。"""
     record = {
-        "条款原文逐字": "测试样例条款：帮扶资金不得用于以下测试性禁止用途：楼堂馆所建设（人造样例，非真实政策原文）。",
+        "条款原文逐字":
+            "测试样例条款：帮扶资金不得用于以下测试性禁止用途："
+            "楼堂馆所建设（人造样例，非真实政策原文）。",
         "出处文号+条款号": "〔测试样例〕省E-011号 第一条",
         "条款号": "一",
         "承接列举": False,
@@ -117,4 +119,6 @@ def test_render_wording_discipline(matcher: NegRuleMatcher) -> None:
 
 def test_render_empty_result() -> None:
     """无命中时给出中性提示（不判定）。"""
-    assert render_hits(MatchResult(hits=(), description_terms=())) == ["未识别到禁止用途词，暂无命中提示。"]
+    assert render_hits(
+        MatchResult(hits=(), description_terms=())
+    ) == ["未识别到禁止用途词，暂无命中提示。"]

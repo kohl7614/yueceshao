@@ -57,8 +57,8 @@ logger = logging.getLogger("calibrate_rerank")
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from rag.retriever import build_retriever  # noqa: E402
 from rag.rerank import build_reranker  # noqa: E402
+from rag.retriever import build_retriever  # noqa: E402
 
 # A/B/C 三组的查询文件（与本脚本同目录）
 GROUP_FILES = {
@@ -103,7 +103,7 @@ def score_one_query(retriever, reranker, query: str, top_k: int) -> float:
 
 def _fmt_table(rows: list[list[str]]) -> str:
     """把二维列表排成对齐的纯文本表。"""
-    widths = [max(len(str(cell)) for cell in col) for col in zip(*rows)]
+    widths = [max(len(str(cell)) for cell in col) for col in zip(*rows, strict=False)]
     lines = []
     for row in rows:
         lines.append(

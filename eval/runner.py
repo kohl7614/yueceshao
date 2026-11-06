@@ -191,7 +191,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--limit", type=int, default=None, help="只跑前 N 条（smoke 用）")
     parser.add_argument("--out", default="runs/latest", help="输出目录，默认 runs/latest")
-    parser.add_argument("--registry", default=None, help="文号注册表导出 JSON；不给则引用错误率记 N/A")
+    parser.add_argument(
+        "--registry", default=None,
+        help="文号注册表导出 JSON；不给则引用错误率记 N/A")
     parser.add_argument(
         "--ablate",
         action="append",
@@ -214,7 +216,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--match-threshold", type=float, default=0.85, help="匹配率验收线，默认 0.85"
     )
-    parser.add_argument("--recall-threshold", type=float, default=0.80, help="召回验收线，默认 0.80")
+    parser.add_argument(
+        "--recall-threshold", type=float, default=0.80, help="召回验收线，默认 0.80")
     parser.add_argument(
         "--citation-error-threshold", type=float, default=0.05, help="引用错误率上限，默认 0.05"
     )
@@ -263,7 +266,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     pipeline = _build_pipeline(args.pipeline)
 
-    groups: list[GroupResult] = [run_group(cases, AblationSwitches.default(), pipeline, thresholds, registry)]
+    groups: list[GroupResult] = [
+        run_group(cases, AblationSwitches.default(), pipeline, thresholds, registry)]
     ablate_targets: list[str] = []
     if args.ablate_all:
         ablate_targets = list(SWITCH_NAMES)
@@ -303,7 +307,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"cases    : {primary.summary.case_count} 条（limit={args.limit}）",
                 f"匹配率   : {_fmt(primary.summary.match_rate)}  线 {thresholds.match_rate:.0%}",
                 f"召回率   : {_fmt(primary.summary.recall)}  线 {thresholds.recall:.0%}",
-                f"引用错误 : {_fmt(primary.summary.citation_error_rate)}  上限 {thresholds.citation_error_rate:.0%}",
+                f"引用错误 : {_fmt(primary.summary.citation_error_rate)}"
+                f"  上限 {thresholds.citation_error_rate:.0%}",
                 f"姿态违规 : {primary.summary.forbidden_violations} 处",
                 f"输出目录 : {out_dir.resolve()}",
             ]

@@ -433,7 +433,7 @@ class ChromaStore:
             if not ids:
                 return found
             metadatas = page.get("metadatas") or [{} for _ in ids]
-            for chunk_id, metadata in zip(ids, metadatas):
+            for chunk_id, metadata in zip(ids, metadatas, strict=False):
                 found[str(chunk_id)] = str((metadata or {}).get(CONTENT_HASH_KEY, ""))
             if len(ids) < self.PAGE_SIZE:
                 return found
@@ -457,7 +457,7 @@ class ChromaStore:
         metadatas = page.get("metadatas") or []
         return [
             (str(chunk_id), dict(metadata or {}))
-            for chunk_id, metadata in zip(ids, metadatas)
+            for chunk_id, metadata in zip(ids, metadatas, strict=False)
         ]
 
     def purge(self, where: Mapping[str, Any]) -> int:

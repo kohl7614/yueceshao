@@ -31,7 +31,6 @@ from rag.hybrid import (
 )
 from rag.retriever import Hit, RetrievalConfig
 
-
 # ================================================================ 测试替身
 
 
@@ -470,7 +469,9 @@ def test_hybrid_drops_non_retrievable_dense_hit(
     assert "9-0001" not in [hit.chunk_id for hit in result.hits]
 
 
-def test_hybrid_empty_query(hybrid_records: list[dict[str, Any]], tokenizer: PolicyTokenizer) -> None:
+def test_hybrid_empty_query(
+    hybrid_records: list[dict[str, Any]], tokenizer: PolicyTokenizer
+) -> None:
     """空查询不打任何一路，返回空结果且不抛异常。"""
     sparse = BM25Index(hybrid_records, tokenizer=tokenizer)
     dense = FakeDense([make_hit("1-0001")])

@@ -25,15 +25,14 @@ from rag.rerank import (
     CrossEncoderScorer,
     GateRunner,
     QualityGate,
+    RerankedHit,
     Reranker,
     RerankerConfig,
-    RerankedHit,
     RerankResult,
     build_reranker,
     resolve_model_source,
     sigmoid,
 )
-
 
 # ================================================================ 测试替身
 
@@ -72,7 +71,9 @@ class BrokenScorer:
         return [0.0] * max(0, len(passages) - 1)
 
 
-def make_hit(chunk_id: str, text: str, doc_no: str = "粤农农规〔2023〕6号", clause: str = "第十条") -> Any:
+def make_hit(
+    chunk_id: str, text: str, doc_no: str = "粤农农规〔2023〕6号", clause: str = "第十条"
+) -> Any:
     """构造一条带 ``text`` 的候选命中（结构对齐 Hit）。"""
     return type(
         "FakeHit",
@@ -177,7 +178,8 @@ def test_rerank_empty_input() -> None:
 
 def test_rerank_empty_query_reason_differs_from_empty_candidates() -> None:
     """空查询与空候选要分开报：前者是上游传错，后者才是"真没检索到"。"""
-    query_empty = Reranker(FakeScorer({}), RerankerConfig()).rerank("  ", [make_hit("1-0001", "正文")])
+    query_empty = Reranker(FakeScorer({}), RerankerConfig()).rerank(
+        "  ", [make_hit("1-0001", "正文")])
     no_hits = Reranker(FakeScorer({}), RerankerConfig()).rerank("产业园申报", [])
 
     assert query_empty.gate.reason == "empty_query"

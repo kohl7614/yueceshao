@@ -402,7 +402,7 @@ def rrf_fuse(
 
     scores: dict[str, float] = {}
     first_seen: dict[str, int] = {}
-    for route, (ids, weight) in enumerate(zip(rankings, weights)):
+    for route, (ids, weight) in enumerate(zip(rankings, weights, strict=False)):
         if weight < 0:
             raise ValueError("weight 不能为负")
         for rank, chunk_id in enumerate(ids, start=1):
@@ -439,7 +439,7 @@ class HybridConfig:
     enable_temporal_filter: bool = True
 
     @classmethod
-    def from_config(cls, raw: Mapping[str, Any] | None) -> "HybridConfig":
+    def from_config(cls, raw: Mapping[str, Any] | None) -> HybridConfig:
         """从整份配置构造；``hybrid`` 段缺字段回落到默认值。"""
         section: Mapping[str, Any] = {}
         if isinstance(raw, Mapping):

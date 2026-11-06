@@ -169,7 +169,7 @@ class RerankerConfig:
             raise ValueError(f"max_attempts 必须 ≥ 1，收到 {self.max_attempts!r}")
 
     @classmethod
-    def from_config(cls, raw: Mapping[str, Any] | None) -> "RerankerConfig":
+    def from_config(cls, raw: Mapping[str, Any] | None) -> RerankerConfig:
         """从整份配置构造；``reranker`` 段缺字段回落到默认值。
 
         **只认顶层的 ``reranker`` 段**：直接传子段（``{"tau": 0.4}``）会被忽略并回落
@@ -641,7 +641,7 @@ class Reranker:
         # 带上重排前的位置再排序：不能用 id(hit) 做键，同一个对象出现两次时
         # 两条会拿到同一位置，rank_delta 跟着算错
         scored = sorted(
-            zip(candidates, logits, range(1, len(candidates) + 1)),
+            zip(candidates, logits, range(1, len(candidates) + 1), strict=False),
             key=lambda item: item[1],
             reverse=True,
         )

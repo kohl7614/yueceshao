@@ -24,8 +24,9 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from eval.dataset import EvalCase
 
@@ -246,7 +247,9 @@ class MetricsSummary:
     def passes(self) -> dict[str, bool | None]:
         """逐项与验收线比对；不可计算的指标记 ``None``。"""
         return {
-            "match_rate": None if self.match_rate is None else self.match_rate >= self.thresholds.match_rate,
+            "match_rate": (
+                None if self.match_rate is None
+                else self.match_rate >= self.thresholds.match_rate),
             "recall": None if self.recall is None else self.recall >= self.thresholds.recall,
             "citation_error_rate": (
                 None
