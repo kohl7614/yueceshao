@@ -75,7 +75,7 @@ yueceshao/
 
 ## 开发流程
 
-见 [docs/协作规范.md](docs/协作规范.md)：**fork → 分支 → PR → owner 审阅合并**。只有仓库所有者有合并权，任何人不得直接 push `main`。
+见 [docs/协作规范.md](docs/协作规范.md)：**分支 → PR → 预审 → 合并**。合并权归仓库所有者（owner）；owner 可按 [docs/AI协作开发规范.md](docs/AI协作开发规范.md) §8 把「审＋合」按通道 A 委托给独立会话的审核与合入代理，通道 B **仍须 owner 终审**（可逐次明示授权代审，须留痕）。任何人都不得直接 push `main`。合并留痕见 [docs/合并台账.md](docs/合并台账.md)。
 
 人与 AI 协作写码的质量流程（计划先行 / TDD 关键路径 / PR 模板 / AI 预审＋人终审 / CI）见 [docs/AI协作开发规范.md](docs/AI协作开发规范.md)。
 
