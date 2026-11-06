@@ -47,7 +47,7 @@ def _components(entail_json: str, rule_hits: tuple = (), generation=MOCK_GENERAT
         extract=lambda d: EXTRACTION,
         retrieve=lambda d, e: MOCK_HITS,
         rule_scan=lambda d: rule_hits,
-        entail_review=lambda d, h: entail_json,
+        entail_review=lambda d, h, fb=None: entail_json,
         generate=gen,
     )
 

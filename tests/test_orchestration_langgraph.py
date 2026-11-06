@@ -41,7 +41,7 @@ class TestGraphTopology:
                 "use_items": [], "terms": []})),
             retrieve=lambda d, e: MOCK_HITS,
             rule_scan=lambda d: (),
-            entail_review=lambda d, h: "[]",
+            entail_review=lambda d, h, fb=None: "[]",
             generate=lambda d, ej, cb, fb: (seen.append(ej), MOCK_GENERATION_JSON)[1],
         )
         graph = build_checkup_graph(components)
