@@ -98,14 +98,14 @@ class OrchestrationComponents:
     - ``extract(description) -> LLM JSON 字符串``
     - ``retrieve(description, extraction) -> 命中 dict 元组（chunk_id/text/metadata）``
     - ``rule_scan(description) -> NegativeHit 元组（②段，确定性模板渲染）``
-    - ``entail_review(description, hits) -> 蕴含复核 LLM JSON 字符串``
+    - ``entail_review(description, hits, feedback) -> 蕴含复核 LLM JSON 字符串``
     - ``generate(description, extraction_json, context_blocks, feedback) -> 生成 LLM JSON``
     """
 
     extract: Callable[[str], str]
     retrieve: Callable[[str, Any], tuple[dict, ...]]
     rule_scan: Callable[[str], tuple]
-    entail_review: Callable[[str, Any], str]
+    entail_review: Callable[[str, Any, str | None], str]
     generate: Callable[[str, str, str, str | None], str]
 
 
@@ -146,12 +146,29 @@ def build_checkup_graph(components: OrchestrationComponents) -> Any:
         return {"negative_hits": components.rule_scan(state["description"])}
 
     def entail_node(state: CheckupState) -> dict:
-        """真实 LLM 蕴含复核：解析「蕴含」项并并进②段（规则 ∪ LLM）。"""
-        try:
-            raw = components.entail_review(state["description"], state["hits"])
-            verdicts = parse_entailments(raw, allowed=set(state["meta_table"].keys()))
-        except Exception:  # noqa: BLE001 - 蕴含复核失败不阻断管线，退化为仅规则命中
-            logger.warning("LLM 蕴含复核失败，②段退化为仅规则命中", exc_info=True)
+        """真实 LLM 蕴含复核：解析「蕴含」项并并进②段（规则 ∪ LLM）。
+
+        解析失败（SchemaError，如姿态禁语/引用越界/结构错）→ 带反馈重试 ≤2（A9 同款语义），
+        仍失败或非 SchemaError（网络/key 异常）→ 降级为仅规则命中，不阻断管线。
+        """
+        allowed = set(state["meta_table"].keys())
+        feedback: str | None = None
+        verdicts: tuple | None = None
+        for _attempt in range(MAX_RETRIES + 1):
+            try:
+                raw = components.entail_review(state["description"], state["hits"], feedback)
+                verdicts = parse_entailments(raw, allowed=allowed)
+                break
+            except SchemaError as exc:
+                feedback = (
+                    "上一版蕴含复核输出未通过校验，请按以下反馈修正后重新输出完整 JSON 数组：\n"
+                    f"- {exc}"
+                )
+            except Exception:  # noqa: BLE001 - 网络/key 异常不重试，退化为仅规则命中
+                logger.warning("LLM 蕴含复核失败，②段退化为仅规则命中", exc_info=True)
+                return {"entail_failed": True}
+        if verdicts is None:
+            logger.warning("LLM 蕴含复核重试耗尽，②段退化为仅规则命中")
             return {"entail_failed": True}
         llm_hits = tuple(
             NegativeHit(citation=v.citation, hit_type=HIT_SUSPECT, matched_words=())

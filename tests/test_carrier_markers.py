@@ -113,7 +113,7 @@ class CapturingLLM:
 
         return MOCK_EXTRACTION_JSON
 
-    def entail_review(self, description: str, hits) -> str:
+    def entail_review(self, description: str, hits, feedback: str | None = None) -> str:
         from app.pipeline import MOCK_ENTAILMENT_JSON
 
         self.entail_calls.append(tuple(hits))
