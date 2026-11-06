@@ -48,10 +48,15 @@ class TestBatch1MergeWords:
         )
 
     def test_cropland_terms_extended(self) -> None:
-        assert {"占用耕地", "造林"} <= set(FORBIDDEN_USE_CONCEPTS["耕地保护与非粮化"])
+        # 2026-11-06 边界收窄：「占用耕地」保留，「造林」不得单独入库（见 TestBoundaryNarrowing）
+        assert "占用耕地" in FORBIDDEN_USE_CONCEPTS["耕地保护与非粮化"]
+        assert "造林" not in FORBIDDEN_USE_CONCEPTS["耕地保护与非粮化"]
 
     def test_dividend_terms_extended(self) -> None:
-        assert "兑付" in FORBIDDEN_USE_CONCEPTS["分红理财"]
+        # 2026-11-06 边界收窄：撤回「兑付」（中性付款动词），「收益分配」亦不收（合规常见）
+        assert {"分红", "理财", "股票", "证券"} == set(FORBIDDEN_USE_CONCEPTS["分红理财"])
+        assert "兑付" not in FORBIDDEN_USE_CONCEPTS["分红理财"]
+        assert "收益分配" not in FORBIDDEN_USE_CONCEPTS["分红理财"]
 
     def test_advance_terms_extended(self) -> None:
         assert "代垫" in FORBIDDEN_USE_CONCEPTS["垫付垫资"]
@@ -123,3 +128,50 @@ class TestProceduralMatching:
         ]))
         result = NegRuleMatcher(store).match("项目依法公开招标，整体发包，三家以上比价。")
         assert result.hits == ()
+
+
+class TestBoundaryNarrowing:
+    """2026-11-06 边界收窄：#41 的两处过宽词被实测证明会误伤合规描述。
+
+    - 「造林」：荒山造林是合规项目内容，违规形态「占用耕地造林」已由「占用耕地」覆盖；
+    - 「兑付」：中性付款动词，「按期兑付工程款／贷款本息」是合规履约表述。
+    对应数据仓负对照批次 N3（C158 荒山造林 / C159 按期兑付工程款）。
+    """
+
+    @staticmethod
+    def _store() -> RuleStore:
+        """两条负面条款：一条禁止占用耕地造林，一条禁止用于分红／理财。"""
+        return RuleStore(records_from_dicts([
+            _record("严禁占用耕地造林、挖塘养鱼和种植苗木草皮。", 1, "耕地保护与非粮化"),
+            _record("帮扶资金不得用于村集体分红、购买理财产品或者偿还债务。", 2, "分红理财"),
+        ]))
+
+    def test_mountain_afforestation_is_compliant_no_hit(self) -> None:
+        """荒山造林（非耕地）不得因「造林」二字命中耕地保护类条款。"""
+        result = NegRuleMatcher(self._store()).match(
+            "我村在林业部门认定的宜林荒山实施造林项目，栽植乡土阔叶树种，配套作业便道。")
+        assert result.hits == (), f"荒山造林被误报：{[h.rule.doc_no for h in result.hits]}"
+
+    def test_repaying_project_payment_is_compliant_no_hit(self) -> None:
+        """按期兑付工程款（含贷款本息）不得因「兑付」命中分红类条款。"""
+        result = NegRuleMatcher(self._store()).match(
+            "工程款由镇财政所按合同约定按期兑付至施工单位对公账户，凭验收单与发票支付。")
+        assert result.hits == (), f"按期兑付工程款被误报：{[h.rule.doc_no for h in result.hits]}"
+
+    def test_income_distribution_wording_is_compliant_no_hit(self) -> None:
+        """合规描述里的「收益分配方案经成员会议审议」不得单独触发（C145/C150 实测口径）。"""
+        result = NegRuleMatcher(self._store()).match(
+            "项目收益分配方案已经成员代表会议审议通过，按方案向成员公布收支情况。")
+        assert result.hits == (), f"收益分配合规表述被误报：{[h.rule.doc_no for h in result.hits]}"
+
+    def test_farmland_afforestation_still_hits(self) -> None:
+        """违规形态「占用耕地造林」仍须命中——收窄不能收掉真违规。"""
+        result = NegRuleMatcher(self._store()).match("拟占用耕地造林八十亩。")
+        assert result.hits
+        assert "占用耕地" in result.hits[0].matched_description_terms
+
+    def test_dividend_still_hits(self) -> None:
+        """违规形态「分红」仍须命中——收窄不能收掉真违规。"""
+        result = NegRuleMatcher(self._store()).match("拟用帮扶资金向村民分红。")
+        assert result.hits
+        assert "分红" in result.hits[0].matched_description_terms
