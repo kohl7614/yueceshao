@@ -175,7 +175,10 @@ class TestPlanIncludesCarriers:
 # ---------------------------------------------------------------------------
 
 def _data_ready() -> bool:
-    data_repo = Path(json.loads(CONFIG_PATH.read_text(encoding="utf-8"))["data_repo"])
+    if not CONFIG_PATH.is_file():
+        return False
+    payload = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    data_repo = Path(str(payload.get("data_repo") or ""))
     return (data_repo / "00_工作区" / "负面清单_条款归并.json").is_file()
 
 
