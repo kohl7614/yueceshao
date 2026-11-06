@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from app.real_components import (
     ORIGIN_NEGATIVE,
     ORIGIN_RULES,
@@ -71,7 +70,7 @@ DESC = "我村申报产业项目，拟购置公务用车一辆"
 """夹具描述：命中「交通工具与通讯设备」概念组。"""
 
 
-def _hit(chunk_id: str = "1-0003", *, serial: int = 1, clause_index: int = 3) -> Hit:
+def _hit(chunk_id: str = "1-0004", *, serial: int = 1, clause_index: int = 4) -> Hit:
     """假检索命中（与载体条款同文件同条序号，用于验证"不再复用稠密标记"）。"""
     return Hit(
         chunk_id=chunk_id,
@@ -138,7 +137,9 @@ class TestCarriersReachEntailReview:
     def test_carrier_covered_by_rule_hit_still_reaches_entail(self) -> None:
         """载体条款同时被规则命中（同文）时，仍须出现在载体复核清单里。"""
         text = CLAUSE
-        components = _components([_rule_dict(text)], (_hit(),))
+        # 不注入稠密命中：让该条款只由规则引擎命中（origin=rules），载体随之复用规则标记——
+        # 这正是"复用标记后仍须进复核"的场景（若注入稠密命中，块会变成 origin=retrieval）。
+        components = _components([_rule_dict(text)])
         description = DESC
         plan = components._plan(description)
 
@@ -172,7 +173,7 @@ class TestCarriersReachEntailReview:
     def test_carrier_not_reusing_dense_marker_even_when_clause_retrieved(self) -> None:
         """稠密命中落在载体条款上时，载体仍拿自己的 negative-list 块（不复用稠密标记）。"""
         text = CLAUSE
-        components = _components([_rule_dict(text)], (_hit(serial=1, clause_index=3),))
+        components = _components([_rule_dict(text)], (_hit(serial=1, clause_index=4),))
         plan = components._plan(DESC)
 
         dense = [h for h in plan.hits if h["metadata"]["origin"] == "retrieval"]
@@ -186,11 +187,11 @@ class TestDistinctTextsGetDistinctMarkers:
     """缺陷 2：同一 (文件, 条款号) 下不同原文不得共用标记。"""
 
     def test_two_subclauses_same_article_both_kept(self) -> None:
-        first = "严禁分配股红，严禁举债分红；"
-        second = "严禁因区划调整、班子换届等因素搞突击分红。"
+        first = "严禁将项目资金用于股红分配或者举债分红（本句为测试合成样例）。"
+        second = "严禁因机构调整、班子换届等情形突击分红（本句为测试合成样例）。"
         components = _components([
-            _rule_dict(first, doc_index=223, clause_no="五十三"),
-            _rule_dict(second, doc_index=223, clause_no="五十三"),
+            _rule_dict(first, doc_index=601, clause_no="五十三"),
+            _rule_dict(second, doc_index=601, clause_no="五十三"),
         ])
         plan = components._plan("拟用帮扶资金向村民分红")
 
@@ -202,10 +203,10 @@ class TestDistinctTextsGetDistinctMarkers:
 
     def test_same_text_same_marker(self) -> None:
         """完全相同的原文仍复用同一标记（不因去重键变化而重复分块）。"""
-        text = "严禁分配股红，严禁举债分红；"
+        text = "严禁将项目资金用于股红分配或者举债分红（本句为测试合成样例）。"
         components = _components([
-            _rule_dict(text, doc_index=223, clause_no="五十三"),
-            _rule_dict(text, doc_index=223, clause_no="五十三"),
+            _rule_dict(text, doc_index=601, clause_no="五十三"),
+            _rule_dict(text, doc_index=601, clause_no="五十三"),
         ])
         plan = components._plan("拟用帮扶资金向村民分红")
         same_text_blocks = [h for h in plan.hits if h["text"] == text]
@@ -216,16 +217,25 @@ class TestGenerationContextUnaffected:
     """①③④段生成上下文仍不含载体（#47 已修，本轮不得回退）。"""
 
     def test_generation_context_excludes_carriers(self) -> None:
+        """载体必须真拿到自己的 negative-list 块才谈得上“不进①段”，故描述不与载体条款命中。
+
+        反例提醒（终审指出）：若描述恰好命中该载体条款，载体复用规则标记、不会产生
+        `origin=negative-list` 的块，``carrier_markers`` 就成了空集，断言会**空转通过**。
+        """
         text = CLAUSE
-        components = _components([_rule_dict(text)])
-        description = DESC
+        components = _components([_rule_dict(text, group_id="G04")])
+        # 描述只提到「差旅」，与夹具条款（公务用车/交通工具组）无共现 → 规则不命中该条款
+        description = "我村申报项目，拟列支项目管理人员的差旅费用"
         plan = components._plan(description)
-        assert plan.carrier_hits, "夹具应产生载体"
-        blocks = components.context_blocks(description)
-        for carrier in plan.carrier_hits:
-            if carrier["chunk_id"] not in build_meta_table(plan.hits):
-                pytest.fail("载体标记应可解析")
+        assert plan.carrier_hits, "夹具应产出载体复核项"
+
         carrier_markers = {h["chunk_id"] for h in plan.hits
                            if h["metadata"]["origin"] == ORIGIN_NEGATIVE}
+        assert carrier_markers, "本用例要求至少有 1 个载体自有块（否则断言空转）"
+
+        table = build_meta_table(plan.hits)
         for marker in carrier_markers:
-            assert marker not in blocks, f"载体 {marker} 不得进入①段生成上下文"
+            assert marker in table, "载体标记必须能在元数据表解析（②段引用可回溯）"
+            assert marker not in components.context_blocks(description), (
+                f"载体 {marker} 不得进入①段生成上下文")
+        assert text not in components.context_blocks(description), "载体原文不得进入①段上下文"
