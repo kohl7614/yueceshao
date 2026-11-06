@@ -55,7 +55,8 @@ class TestColumnAliases:
              "待P0（应命中：设施未建成即申报）",
              "粤测农〔2099〕1号第四条（预算监控口径）；现行参照载体粤测农〔2099〕2号第五条", ""],
             ["C02", "测试公告", "某产业园申请扶持资金。",
-             "应提示：须依法履行采购程序", "粤测农〔2099〕1号第八条（不覆盖本情形）；粤测农〔2099〕3号第九条", ""],
+             "应提示：须依法履行采购程序",
+             "粤测农〔2099〕1号第八条（不覆盖本情形）；粤测农〔2099〕3号第九条", ""],
         ])
         cases = load_cases(path)
         assert [c.case_id for c in cases] == ["C01", "C02"]
@@ -81,7 +82,8 @@ class TestColumnAliases:
 
     def test_chinese_uninferable_warning_becomes_unlabeled(self, tmp_path: Path) -> None:
         path = _write(tmp_path, "cases.csv", CHINESE_HEADER,
-                      [["C01", "测试公告", "描述", "（口径待定，暂无预警文案）", "粤测农〔2099〕1号第四条", ""]])
+                      [["C01", "测试公告", "描述", "（口径待定，暂无预警文案）",
+                        "粤测农〔2099〕1号第四条", ""]])
         cases = load_cases(path)
         assert cases[0].expected_verdict is None
 
@@ -93,7 +95,8 @@ class TestColumnAliases:
 class TestRefExtraction:
     def test_extracts_and_normalizes(self) -> None:
         """提取后归一为「文号#序号」——与规则库 source_ref 的归一形态可比。"""
-        assert extract_refs_from_text("依据粤财测〔2099〕1号第二十条（预算口径）") == ("粤财测〔2099〕1号#20",)
+        assert extract_refs_from_text(
+            "依据粤财测〔2099〕1号第二十条（预算口径）") == ("粤财测〔2099〕1号#20",)
         assert extract_refs_from_text("粤测农〔2099〕1号第（二）项") == ()
 
     def test_bare_number_shorthand_not_matched(self) -> None:
@@ -118,7 +121,8 @@ class TestRulesPipeline:
         prediction = rules_pipeline.predict(case)
         assert isinstance(prediction, CasePrediction)
         assert prediction.verdict == "hit"
-        assert prediction.refs and all("[测试样例]" in ref or "测试样例" in ref for ref in prediction.refs)
+        assert prediction.refs and all(
+            "[测试样例]" in ref or "测试样例" in ref for ref in prediction.refs)
         # 组全谱系口径：citations（直接命中）⊆ refs（含等价组成员）
         assert prediction.citations and set(prediction.citations) <= set(prediction.refs)
 
@@ -128,7 +132,9 @@ class TestRulesPipeline:
         prediction = rules_pipeline.predict(case)
         assert prediction.verdict == "miss" and prediction.refs == ()
 
-    def test_text_empty_for_pure_deterministic_pipeline(self, rules_pipeline: RulesPipeline) -> None:
+    def test_text_empty_for_pure_deterministic_pipeline(
+        self, rules_pipeline: RulesPipeline
+    ) -> None:
         """纯确定性模板输出无 LLM 生成段：text 置空，姿态扫描定义上不适用。
 
         render_hits 的条款原文引文与等价组名可能天然含「合规/不合规」等字样

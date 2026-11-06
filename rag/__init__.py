@@ -13,9 +13,9 @@
 from rag.chunker import (
     Chunk,
     ChunkConfig,
+    check_clause_continuity,
     chunk_corpus,
     chunk_document,
-    check_clause_continuity,
     clause_sequence,
 )
 from rag.loader import DocRecord, LoadResult, load_registry

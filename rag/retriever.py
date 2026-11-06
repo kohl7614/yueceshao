@@ -99,7 +99,7 @@ class RetrievalConfig:
     exclude_appendix: bool = False
 
     @classmethod
-    def from_config(cls, raw: Mapping[str, Any] | None) -> "RetrievalConfig":
+    def from_config(cls, raw: Mapping[str, Any] | None) -> RetrievalConfig:
         """从整份配置构造；``retrieval`` 段缺字段回落到默认值。"""
         section = _section(raw, "retrieval")
         categories = section.get("exclude_categories")
@@ -572,7 +572,9 @@ def build_retriever(config: Mapping[str, Any] | None = None) -> DenseRetriever:
     index_config = IndexConfig.from_config(config)
     store = ChromaStore(index_config)
     embedder = Qwen3Embedder(index_config.embedding)
-    return DenseRetriever(embedder, ChromaBackend(store.collection), RetrievalConfig.from_config(config))
+    return DenseRetriever(
+        embedder, ChromaBackend(store.collection),
+        RetrievalConfig.from_config(config))
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -12,7 +12,9 @@ from pathlib import Path
 
 import pytest
 
+from eval.config import AblationSwitches
 from eval.dataset import DatasetError, EvalCase, RegistryError, load_cases, take
+from eval.gating import gated
 from eval.metrics import (
     FORBIDDEN_PHRASES,
     REPORT_DISCLAIMER,
@@ -22,10 +24,7 @@ from eval.metrics import (
     strip_disclaimer,
     summarize,
 )
-from eval.gating import gated
-from eval.pipeline import NullPipeline
 from eval.runner import _load_registry, main, run_group
-from eval.config import AblationSwitches
 
 HEADER = ["case_id", "query", "expected_verdict", "expected_refs", "notes"]
 
@@ -108,7 +107,8 @@ def test_load_cases_requires_columns(tmp_path: Path) -> None:
 
 def test_load_cases_rejects_duplicate_id_and_bad_verdict(tmp_path: Path) -> None:
     """case_id 重复、判定取值非法都要当场报错。"""
-    dup = _write_cases(tmp_path / "dup.csv", [["CASE-A", "x", "", "", ""], ["CASE-A", "y", "", "", ""]])
+    dup = _write_cases(tmp_path / "dup.csv", [
+        ["CASE-A", "x", "", "", ""], ["CASE-A", "y", "", "", ""]])
     with pytest.raises(DatasetError, match="重复"):
         load_cases(dup)
 
@@ -262,7 +262,9 @@ def test_summarize_returns_none_when_not_computable() -> None:
 def test_summary_pass_flags_follow_thresholds() -> None:
     """达标判定按手册的三个数字。"""
     outcomes = [
-        evaluate_case(EvalCase("c1", "q", "hit", ("REF-A",)), CasePrediction("hit", ("REF-A",), ("REF-A",)), {"REF-A": {}}),
+        evaluate_case(
+            EvalCase("c1", "q", "hit", ("REF-A",)),
+            CasePrediction("hit", ("REF-A",), ("REF-A",)), {"REF-A": {}}),
         evaluate_case(EvalCase("c2", "q", "miss"), CasePrediction("miss")),
     ]
     summary = summarize(outcomes, EvalThresholds(), registry_provided=True)
@@ -312,7 +314,8 @@ def test_runner_writes_metrics_and_details(tmp_path: Path) -> None:
     out_dir = tmp_path / "out"
 
     exit_code = main(
-        ["--cases", str(cases_path), "--limit", "10", "--out", str(out_dir), "--log-level", "WARNING"]
+        ["--cases", str(cases_path), "--limit", "10", "--out", str(out_dir),
+         "--log-level", "WARNING"]
     )
 
     assert (out_dir / "metrics.json").is_file()
@@ -351,14 +354,16 @@ def test_runner_ablate_all_writes_matrix(tmp_path: Path) -> None:
         rows = list(csv.DictReader(handle))
     assert len(rows) == 7
     assert rows[0]["group"] == "full"
-    assert {row["disabled_switches"] for row in rows[1:]} == set(AblationSwitches.default().to_dict())
+    expected_disabled = set(AblationSwitches.default().to_dict())
+    assert {row["disabled_switches"] for row in rows[1:]} == expected_disabled
 
 
 def test_runner_rejects_unknown_ablate_switch(tmp_path: Path) -> None:
     """--ablate 写错开关名返回退出码 2，不静默忽略。"""
     cases_path = _write_cases(tmp_path / "cases.csv", [["CASE-00", "q", "miss", "", ""]])
     exit_code = main(
-        ["--cases", str(cases_path), "--ablate", "no_such_switch", "--out", str(tmp_path / "o"), "--log-level", "WARNING"]
+        ["--cases", str(cases_path), "--ablate", "no_such_switch",
+         "--out", str(tmp_path / "o"), "--log-level", "WARNING"]
     )
     assert exit_code == 2
 

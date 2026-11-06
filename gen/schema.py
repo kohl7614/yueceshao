@@ -55,7 +55,10 @@ _DOC_NO_PATTERN = re.compile(r"〔\d{4}〕\s*\d+\s*号")
 CITATION_PATTERN = re.compile(r"^\[C(\d+)\]$")
 
 # ---- 渲染层强制注入的免责声明（README 产品级原文锚点，feat/gen-citation 使用）----
-DISCLAIMER_TEXT = "本报告仅为申报前自查辅助参考，不构成合规判定，请以政策法规原文及主管部门意见为准。"
+DISCLAIMER_TEXT = (
+    "本报告仅为申报前自查辅助参考，不构成合规判定，"
+    "请以政策法规原文及主管部门意见为准。"
+)
 
 
 class SchemaError(ValueError):
@@ -112,12 +115,18 @@ class QueryExtraction:
     use_items: tuple[str, ...]           # 资金用途条目
     terms: tuple[str, ...]               # 术语归一建议（如「建厕所」→「农村人居环境整治」）
 
-    def validate(self) -> "QueryExtraction":
+    def validate(self) -> QueryExtraction:
         if self.subject_type not in VALID_SUBJECT_TYPES:
-            raise SchemaError(f"主体类型非法：{self.subject_type!r}（枚举：{sorted(VALID_SUBJECT_TYPES)}）")
+            raise SchemaError(
+                f"主体类型非法：{self.subject_type!r}"
+                f"（枚举：{sorted(VALID_SUBJECT_TYPES)}）")
         if not self.construction_items and not self.use_items:
             raise SchemaError("建设内容与资金用途条目不能同时为空（检索分解无从下手）")
-        for label, items in (("建设内容条目", self.construction_items), ("资金用途条目", self.use_items), ("术语归一建议", self.terms)):
+        for label, items in (
+            ("建设内容条目", self.construction_items),
+            ("资金用途条目", self.use_items),
+            ("术语归一建议", self.terms),
+        ):
             for i, item in enumerate(items, 1):
                 check_llm_text(_require_str(item, f"{label}[{i}]"), f"{label}[{i}]")
         return self
@@ -135,11 +144,13 @@ class EntailmentVerdict:
     verdict: str    # 蕴含 / 不蕴含 / 不确定
     reason: str     # 判断依据（引 chunk 原文措辞；禁文号、禁结论性措辞）
 
-    def validate(self, allowed: Collection[str] = ()) -> "EntailmentVerdict":
+    def validate(self, allowed: Collection[str] = ()) -> EntailmentVerdict:
         check_citation(self.citation, allowed, "EntailmentVerdict.citation")
         if self.verdict not in VALID_ENTAILMENTS:
-            raise SchemaError(f"蕴含结论非法：{self.verdict!r}（枚举：{sorted(VALID_ENTAILMENTS)}）")
-        check_llm_text(_require_str(self.reason, "EntailmentVerdict.reason"), "EntailmentVerdict.reason")
+            raise SchemaError(
+                f"蕴含结论非法：{self.verdict!r}（枚举：{sorted(VALID_ENTAILMENTS)}）")
+        check_llm_text(
+            _require_str(self.reason, "EntailmentVerdict.reason"), "EntailmentVerdict.reason")
         return self
 
 
@@ -155,11 +166,12 @@ class PolicyItem:
     summary: str            # 适用说明（不含文号/条款号/生效日期——渲染层注入）
     confidence: str | None  # 置信标签：LLM 输出必须为 None（手册 §4.8：LLM 不自评置信度）
 
-    def validate(self, allowed: Collection[str] = ()) -> "PolicyItem":
+    def validate(self, allowed: Collection[str] = ()) -> PolicyItem:
         check_citation(self.citation, allowed, "PolicyItem.citation")
         check_llm_text(_require_str(self.summary, "PolicyItem.summary"), "PolicyItem.summary")
         if self.confidence is not None and self.confidence not in VALID_CONFIDENCE:
-            raise SchemaError(f"置信标签非法：{self.confidence!r}（且 LLM 输出必须为 None，系统侧填充）")
+            raise SchemaError(
+                f"置信标签非法：{self.confidence!r}（且 LLM 输出必须为 None，系统侧填充）")
         return self
 
 
@@ -171,7 +183,7 @@ class MissingItem:
     name: str       # 材料名称
     note: str       # 依据说明（建议核对口径，非正式申报清单）
 
-    def validate(self, allowed: Collection[str] = ()) -> "MissingItem":
+    def validate(self, allowed: Collection[str] = ()) -> MissingItem:
         check_citation(self.citation, allowed, "MissingItem.citation")
         check_llm_text(_require_str(self.name, "MissingItem.name"), "MissingItem.name")
         check_llm_text(_require_str(self.note, "MissingItem.note"), "MissingItem.note")
@@ -184,7 +196,7 @@ class SuggestionItem:
 
     text: str
 
-    def validate(self) -> "SuggestionItem":
+    def validate(self) -> SuggestionItem:
         check_llm_text(_require_str(self.text, "SuggestionItem.text"), "SuggestionItem.text")
         return self
 
@@ -204,16 +216,17 @@ class GeneratedSections:
 
     VALID_SECTION_NAMES = frozenset({"①适用政策", "③材料缺项", "④修改建议"})
 
-    def validate(self, allowed: Collection[str] = ()) -> "GeneratedSections":
-        for i, item in enumerate(self.policy_items, 1):
+    def validate(self, allowed: Collection[str] = ()) -> GeneratedSections:
+        for _i, item in enumerate(self.policy_items, 1):
             item.validate(allowed)
-        for i, item in enumerate(self.missing_items, 1):
+        for _i, item in enumerate(self.missing_items, 1):
             item.validate(allowed)
-        for i, item in enumerate(self.suggestions, 1):
+        for _i, item in enumerate(self.suggestions, 1):
             item.validate()
         for name in self.uncovered_sections:
             if name not in self.VALID_SECTION_NAMES:
-                raise SchemaError(f"未覆盖段声明非法：{name!r}（枚举：{sorted(self.VALID_SECTION_NAMES)}）")
+                raise SchemaError(
+                    f"未覆盖段声明非法：{name!r}（枚举：{sorted(self.VALID_SECTION_NAMES)}）")
         # 未覆盖声明与条目互斥：声明了未覆盖的段不得同时给出条目
         if "①适用政策" in self.uncovered_sections and self.policy_items:
             raise SchemaError("①段已声明未覆盖，不得同时给出适用政策条目")
@@ -238,7 +251,7 @@ class NegativeHit:
     hit_type: str              # 规则命中 / 疑似命中（建议对照原文）
     matched_words: tuple[tuple[str, str], ...]  # (描述侧词, 条款侧词) 对
 
-    def validate(self, allowed: Collection[str] = ()) -> "NegativeHit":
+    def validate(self, allowed: Collection[str] = ()) -> NegativeHit:
         check_citation(self.citation, allowed, "NegativeHit.citation")
         if self.hit_type not in VALID_HIT_TYPES:
             raise SchemaError(f"命中类型非法：{self.hit_type!r}（枚举：{sorted(VALID_HIT_TYPES)}）")
@@ -256,12 +269,14 @@ class CheckupReport:
     suggestions: tuple[SuggestionItem, ...]  # ④段
     uncovered_sections: tuple[str, ...] = field(default=())
 
-    def validate(self, allowed: Collection[str] = ()) -> "CheckupReport":
+    def validate(self, allowed: Collection[str] = ()) -> CheckupReport:
         _require_str(self.project_summary, "CheckupReport.project_summary")
         for item in self.policy_items:
             item.validate(allowed)
             if item.confidence not in VALID_CONFIDENCE:
-                raise SchemaError(f"最终报告的①段条目必须带系统侧置信标签，{item.citation} 收到 {item.confidence!r}")
+                raise SchemaError(
+                    f"最终报告的①段条目必须带系统侧置信标签，"
+                    f"{item.citation} 收到 {item.confidence!r}")
         for item in self.negative_hits:
             item.validate(allowed)
         for item in self.missing_items:
@@ -306,7 +321,8 @@ def parse_extraction(raw: str) -> QueryExtraction:
     try:
         return QueryExtraction(
             subject_type=str(data.get("subject_type") or ""),
-            construction_items=_as_str_tuple(data.get("construction_items") or [], "construction_items"),
+            construction_items=_as_str_tuple(
+                data.get("construction_items") or [], "construction_items"),
             use_items=_as_str_tuple(data.get("use_items") or [], "use_items"),
             terms=_as_str_tuple(data.get("terms") or [], "terms"),
         ).validate()
@@ -375,6 +391,8 @@ def parse_generated(raw: str, allowed: Collection[str] = ()) -> GeneratedSection
             if isinstance(it, dict)
         )
         uncovered = _as_str_tuple(data.get("uncovered_sections") or [], "uncovered_sections")
-        return GeneratedSections(tuple(policy_items), missing_items, suggestions, uncovered).validate(allowed)
+        return GeneratedSections(
+            tuple(policy_items), missing_items, suggestions, uncovered
+        ).validate(allowed)
     except SchemaError as exc:
         raise SchemaError(f"生成输出结构不符：{exc}") from exc

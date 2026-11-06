@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 __all__ = [
     "SWITCH_NAMES",
@@ -86,17 +87,17 @@ class AblationSwitches:
     # ---- 构造 -------------------------------------------------------------
 
     @classmethod
-    def default(cls) -> "AblationSwitches":
+    def default(cls) -> AblationSwitches:
         """返回完整系统（六组开关全开）。"""
         return cls()
 
     @classmethod
-    def all_disabled(cls) -> "AblationSwitches":
+    def all_disabled(cls) -> AblationSwitches:
         """返回全部移除的极端配置，便于快速验证 bypass 链路。"""
         return cls(**{name: False for name in SWITCH_NAMES})
 
     @classmethod
-    def from_mapping(cls, values: Mapping[str, Any]) -> "AblationSwitches":
+    def from_mapping(cls, values: Mapping[str, Any]) -> AblationSwitches:
         """从"部分覆盖"映射构造；未出现的开关保持默认 ``True``。
 
         未知键直接抛错——评测配置写错开关名会让消融结论失真，属于必须暴露的错误。
@@ -110,7 +111,7 @@ class AblationSwitches:
         return cls(**overrides)
 
     @classmethod
-    def from_json_file(cls, path: str | Path) -> "AblationSwitches":
+    def from_json_file(cls, path: str | Path) -> AblationSwitches:
         """从 JSON 文件读取开关；文件内只需写需要覆盖的键。"""
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
         if not isinstance(raw, Mapping):
@@ -120,7 +121,7 @@ class AblationSwitches:
     @classmethod
     def from_env(
         cls, prefix: str = "YUECESHAO_ABLATION_", environ: Mapping[str, str] | None = None
-    ) -> "AblationSwitches":
+    ) -> AblationSwitches:
         """从环境变量读取开关，变量名形如 ``YUECESHAO_ABLATION_RERANK=0``。
 
         仅识别 ``1/true/yes/on`` 与 ``0/false/no/off``，其余取值视为配置错误。
@@ -179,7 +180,7 @@ class AblationSwitches:
         """六组全开则为完整系统（基线组）。"""
         return not self.disabled()
 
-    def with_overrides(self, **overrides: bool) -> "AblationSwitches":
+    def with_overrides(self, **overrides: bool) -> AblationSwitches:
         """返回覆盖后的新快照（原对象不变，dataclass 为 frozen）。"""
         for key in overrides:
             _check_switch_name(key)
