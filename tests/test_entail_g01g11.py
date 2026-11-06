@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 from app.real_components import (
     ORIGIN_NEGATIVE,
+    ORIGIN_RETRIEVAL,
     ORIGIN_RULES,
     RealComponents,
     dedup_carriers,
@@ -168,6 +169,48 @@ class TestPlanIncludesCarriers:
         assert len(carriers) == 1
         assert carriers[0]["metadata"]["doc_no"] == "粤测农〔2099〕1号"
         assert carriers[0]["chunk_id"].startswith("[C")
+
+
+# ---------------------------------------------------------------------------
+# 载体不进①段生成上下文（P2 回归）
+# ---------------------------------------------------------------------------
+
+class TestCarriersExcludedFromGeneration:
+    @staticmethod
+    def _components() -> RealComponents:
+        store = RuleStore(records_from_dicts([{
+            "条款原文逐字": "项目资金不得用于修建楼堂馆所。",
+            "出处文号+条款号": "粤测农〔2099〕1号 第四条",
+            "条款号": "四", "承接列举": False, "层级": "省",
+            "所在文件效力状态": "有效",
+            "等价组建议": {"组号": "G04", "组名": "楼堂馆所", "组类型": "锚词组"},
+            "负面清单载体文件": True, "溯源_文件序号": 1, "溯源_文号": "粤测农〔2099〕1号",
+            "溯源_标题": "测试用办法", "溯源_发布机关": "测试机关", "溯源_发布日期": "2099-01-01",
+            "溯源_类别": "资金管理办法", "组裁定": "接受",
+        }]))
+        return RealComponents(
+            CONFIG_PATH, retriever=FakeRetriever((_hit(),)), matcher=NegRuleMatcher(store))
+
+    def test_carrier_markers_absent_from_context_blocks(self) -> None:
+        components = self._components()
+        description = "我村申报产业项目"
+        hits = components.retrieve(description, None)
+        carrier_markers = {
+            h["chunk_id"] for h in hits if h["metadata"].get("origin") == ORIGIN_NEGATIVE}
+        assert carrier_markers, "夹具应产出至少一个 G01-G11 载体"
+        blocks = components.context_blocks(description)
+        for marker in carrier_markers:
+            assert marker not in blocks, f"载体 {marker} 混进了生成上下文（应只服务②段复核）"
+
+    def test_retrieval_and_rule_blocks_still_in_context(self) -> None:
+        components = self._components()
+        description = "我村申报产业项目"
+        hits = components.retrieve(description, None)
+        keep = {h["chunk_id"] for h in hits
+                if h["metadata"].get("origin") in (ORIGIN_RETRIEVAL, ORIGIN_RULES)}
+        blocks = components.context_blocks(description)
+        for marker in keep:
+            assert marker in blocks, f"{marker} 不应被过滤掉"
 
 
 # ---------------------------------------------------------------------------

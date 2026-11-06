@@ -617,8 +617,17 @@ class RealComponents:
         return self._llm.generate(description, extraction_json, blocks, feedback)
 
     def context_blocks(self, description: str) -> str:
-        """按命中计划拼生成上下文（``[Cn]｜有效性\n原文（逐字）：…``）。"""
-        return render_context_blocks(self._plan(description).hits)
+        """按命中计划拼生成上下文（``[Cn]｜有效性\n原文（逐字）：…``）。
+
+        只喂**检索命中**与**规则命中**：G01-G11 载体（``origin=negative-list``）只服务
+        ②段蕴含复核，不进①③④段生成的提示词——否则禁止性条款会被当成「适用政策」喂给
+        生成模型，既污染①段的语义口径，也白白放大上下文体积。
+        """
+        hits = [
+            hit for hit in self._plan(description).hits
+            if hit["metadata"].get("origin") != ORIGIN_NEGATIVE
+        ]
+        return render_context_blocks(hits)
 
     def components(self) -> OrchestrationComponents:
         """暴露编排图五回调（检索/规则为真，LLM 由注入决定）。"""
