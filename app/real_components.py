@@ -76,7 +76,7 @@ from rag.retriever import Hit, RetrievalResult
 from rules.engine import MatchResult, NegRuleMatcher, RuleHit
 from rules.lexicon import FORBIDDEN_USE_CONCEPTS
 from rules.loader import load_store_from_config
-from rules.schema import RuleRecord
+from rules.schema import RuleRecord, display_priority_key
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,12 @@ ORIGIN_RETRIEVAL = "retrieval"
 
 ORIGIN_RULES = "rules"
 """命中来自负面清单规则库（②段条款块，保证引用可解析）。"""
+
+ORIGIN_NEGATIVE = "negative-list"
+"""命中来自 G01-G11 禁止用途载体（②段蕴含复核的待审条款，不参与①段生成）。"""
+
+_G01G11_GROUPS = frozenset(f"G{i:02d}" for i in range(1, 12))
+_NEGATIVE_WORDS = ("不得", "禁止", "严禁")
 
 _UNCLAUSED_MARK = "未分条"
 _CLAUSE_NO_PATTERN = re.compile(r"^第?\s*([0-9一二三四五六七八九十百零〇两]+)\s*条?$")
@@ -191,7 +197,9 @@ def hit_to_orchestration_hit(hit: Hit, marker: str) -> dict[str, Any]:
     return {"chunk_id": marker, "text": hit.text, "metadata": metadata}
 
 
-def rule_orchestration_hit(rule: RuleRecord, marker: str) -> dict[str, Any]:
+def rule_orchestration_hit(
+    rule: RuleRecord, marker: str, *, origin: str = ORIGIN_RULES,
+) -> dict[str, Any]:
     """规则库条款 → 命中 dict（溯源字段全部取自规则库，供②段引用解析）。"""
     metadata: dict[str, Any] = {
         "doc_no": rule.doc_no,
@@ -202,9 +210,31 @@ def rule_orchestration_hit(rule: RuleRecord, marker: str) -> dict[str, Any]:
         "is_current": rule.is_effective,
         "serial": rule.doc_index,
         "category": rule.doc_category,
-        "origin": ORIGIN_RULES,
+        "origin": origin,
     }
     return {"chunk_id": marker, "text": rule.clause_text, "metadata": metadata}
+
+
+def is_g01g11_carrier(record: RuleRecord) -> bool:
+    """是否 G01-G11 禁止用途载体：组号落在 G01-G11 且条款原文含禁止性措辞。
+
+    承接列举项（如「修建楼堂馆所支出」）无「不得/禁止/严禁」字样，不进载体——
+    其禁止语义由同组含「不得」的父条（如「专项资金不得用于…建设楼堂馆所…」）覆盖。
+    """
+    return (
+        record.group_id in _G01G11_GROUPS
+        and any(word in record.clause_text for word in _NEGATIVE_WORDS)
+    )
+
+
+def dedup_carriers(records: Sequence[RuleRecord]) -> list[RuleRecord]:
+    """按条款原文去重，同文保留展示优先级最高（现行有效＋层级更具体）的载体。"""
+    best: dict[str, RuleRecord] = {}
+    for record in records:
+        existing = best.get(record.clause_text)
+        if existing is None or display_priority_key(record) < display_priority_key(existing):
+            best[record.clause_text] = record
+    return sorted(best.values(), key=display_priority_key)
 
 
 def matched_word_pairs(
@@ -342,8 +372,13 @@ class QwenLLM:
         )
 
     def entail_review(self, description: str, hits: Sequence[dict[str, Any]]) -> str:
-        """负面条款蕴含复核（gen.prompts 第二段提示词，条款块带标记与效力）。"""
-        blocks = render_context_blocks(hits, origin=ORIGIN_RULES)
+        """负面条款蕴含复核（gen.prompts 第二段提示词，条款块带标记与效力）。
+
+        复核对象＝G01-G11 禁止用途载体（origin=negative-list），而非规则命中块——
+        规则命中的条款关键词已命中、LLM 再评只做确认；真正的增量在关键词漏掉的
+        禁止用途语义，故只喂 G01-G11 载体。
+        """
+        blocks = render_context_blocks(hits, origin=ORIGIN_NEGATIVE)
         return self.complete(
             NEGATIVE_ENTAILMENT_SYSTEM_PROMPT,
             render_prompt(
@@ -467,6 +502,12 @@ class RealComponents:
                 "按手册从 ModelScope 下载 Qwen/Qwen3-Embedding-0.6B 到该目录（权重不入 git）。")
 
     # —— 计划（描述 → 命中＋②段）——
+    def _negative_carriers(self) -> list[RuleRecord]:
+        """现行有效的 G01-G11 禁止用途载体（含禁止性措辞，按原文去重）。"""
+        records = [
+            r for r in self._matcher.store.valid_records() if is_g01g11_carrier(r)]
+        return dedup_carriers(records)
+
     def _plan(self, description: str) -> RetrievalPlan:
         """计算（或复用）一次描述的命中计划；加锁保证并发分支共享同一计划。"""
         key = (description or "").strip()
@@ -527,6 +568,22 @@ class RealComponents:
                 matched_words=words,
             ))
 
+        # G01-G11 禁止用途载体：给②段蕴含复核的待审条款（origin=negative-list，
+        # 不参与①段生成）。含禁止性措辞＋按原文去重 → ~11-30 项，一次 LLM 调用。
+        for carrier in self._negative_carriers():
+            clause_index = clause_no_to_index(carrier.clause_no)
+            marker = (
+                dense_markers.get((carrier.doc_index, clause_index))
+                if clause_index is not None else None
+            )
+            if marker is None:
+                marker = rule_markers.get((carrier.doc_index, carrier.clause_no))
+            if marker is None:
+                marker = f"[C{next_index}]"
+                next_index += 1
+                rule_markers[(carrier.doc_index, carrier.clause_no)] = marker
+                hits.append(rule_orchestration_hit(carrier, marker, origin=ORIGIN_NEGATIVE))
+
         plan = RetrievalPlan(
             hits=tuple(hits),
             negative_hits=tuple(negative_hits),
@@ -560,8 +617,17 @@ class RealComponents:
         return self._llm.generate(description, extraction_json, blocks, feedback)
 
     def context_blocks(self, description: str) -> str:
-        """按命中计划拼生成上下文（``[Cn]｜有效性\n原文（逐字）：…``）。"""
-        return render_context_blocks(self._plan(description).hits)
+        """按命中计划拼生成上下文（``[Cn]｜有效性\n原文（逐字）：…``）。
+
+        只喂**检索命中**与**规则命中**：G01-G11 载体（``origin=negative-list``）只服务
+        ②段蕴含复核，不进①③④段生成的提示词——否则禁止性条款会被当成「适用政策」喂给
+        生成模型，既污染①段的语义口径，也白白放大上下文体积。
+        """
+        hits = [
+            hit for hit in self._plan(description).hits
+            if hit["metadata"].get("origin") != ORIGIN_NEGATIVE
+        ]
+        return render_context_blocks(hits)
 
     def components(self) -> OrchestrationComponents:
         """暴露编排图五回调（检索/规则为真，LLM 由注入决定）。"""

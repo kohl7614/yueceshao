@@ -34,7 +34,7 @@ from gen.citation import build_meta_table
 from gen.schema import DISCLAIMER_TEXT, HIT_RULE
 from rag.retriever import Hit, RetrievalResult
 from rules.engine import MatchResult, RuleHit
-from rules.schema import RuleRecord
+from rules.schema import RuleRecord, RuleStore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config.json"
@@ -105,10 +105,11 @@ class FakeRetriever:
 
 
 class FakeMatcher:
-    """假规则匹配器：返回固定 MatchResult。"""
+    """假规则匹配器：返回固定 MatchResult；store 为空规则库（无 G01-G11 载体）。"""
 
     def __init__(self, result: MatchResult) -> None:
         self._result = result
+        self.store = RuleStore([])
 
     def match(self, description: str) -> MatchResult:
         return self._result
