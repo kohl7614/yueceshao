@@ -115,6 +115,134 @@
       <p class="howto-note">为什么只给提示、不给「合规 / 可以申报」结论？最终以政策法规原文及主管部门意见为准，本工具仅做申报前自查辅助。静态演示版仅内置 3 个典型案例的报告，真人系统为「输入即出」。</p>
     </section>
 
+    <!-- ④ 系统评测：三项指标与消融对比（静态框架展示，数字待真实管线跑批回填，不预填预估数字） -->
+    <section class="eval" id="eval" aria-labelledby="eval-title">
+      <h2 id="eval-title" class="section-title">系统评测 · 三项指标与消融对比</h2>
+      <p class="section-sub">三项指标衡量「体检报告可不可信」：<strong>匹配率</strong>看判定对不对，<strong>召回率</strong>看该查到的条款有没有漏，<strong>引用错误率</strong>看文号可不可核验。指标口径与验收线来自团队手册 3.4（实现见 <code>eval/metrics.py</code>）；完整系统（基线）与消融组的对比矩阵由 <code>eval/runner.py</code> 跑批产出。真实生成管线尚未接入，数字一律诚实标注 N/A、待跑批后回填，不预填任何预估数字。</p>
+
+      <ul class="eval-grid">
+        <li class="eval-metric">
+          <div class="eval-metric-head">
+            <span class="eval-metric-name">匹配率</span>
+            <span class="eval-line eval-line-ok">验收线 ≥ 85%</span>
+          </div>
+          <p class="eval-metric-desc">系统判定（命中 / 未命中负面清单）与人工标注判定的一致率。分母只计已标注判定的案例，未标注的进逐案例明细、不参与该指标。</p>
+          <p class="eval-metric-value"><span class="badge badge-na">N/A</span>待真实管线跑批回填</p>
+        </li>
+        <li class="eval-metric">
+          <div class="eval-metric-head">
+            <span class="eval-metric-name">召回率</span>
+            <span class="eval-line eval-line-ok">验收线 ≥ 80%</span>
+          </div>
+          <p class="eval-metric-desc">正例条款召回（micro 口径）：Σ｜预测 ∩ 标注｜／Σ｜标注｜。只标「命中」未给具体条款的案例退化为整案召回，明细中标 case-level。</p>
+          <p class="eval-metric-value"><span class="badge badge-na">N/A</span>待真实管线跑批回填</p>
+        </li>
+        <li class="eval-metric">
+          <div class="eval-metric-head">
+            <span class="eval-metric-name">引用错误率</span>
+            <span class="eval-line eval-line-cap">上限 ≤ 5%</span>
+          </div>
+          <p class="eval-metric-desc">输出引用中无法在 registry（文号注册表）核验的比例。未提供 registry 时记 N/A——无法判断真假时，不能默认它是对的。</p>
+          <p class="eval-metric-value"><span class="badge badge-na">N/A</span>待真实管线跑批回填</p>
+        </li>
+      </ul>
+
+      <div class="eval-matrix">
+        <div class="eval-matrix-head">
+          <h3 class="eval-matrix-title">完整系统（基线）vs 消融组 · 七组对比</h3>
+          <span class="pill pill-void">框架展示 · 数字待跑批</span>
+        </div>
+        <p class="eval-matrix-sub">六组消融开关集中在 <code>eval/config.py</code>（唯一来源）：完整系统＝六组开关全开（基线组），逐组移除一个模块即得消融组，共 7 组对比矩阵。</p>
+        <div class="eval-table-wrap" tabindex="0" role="region" aria-label="消融对比矩阵（横向可滚动）">
+          <table class="eval-table">
+            <thead>
+              <tr>
+                <th scope="col">对比组</th>
+                <th scope="col">被移除模块</th>
+                <th scope="col">匹配率 <span class="eval-th-line">≥85%</span></th>
+                <th scope="col">召回率 <span class="eval-th-line">≥80%</span></th>
+                <th scope="col">引用错误率 <span class="eval-th-line">≤5%</span></th>
+                <th scope="col">达标</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="eval-row-full">
+                <th scope="row">完整系统（基线）</th>
+                <td data-label="被移除模块">—（六组开关全开）</td>
+                <td data-label="匹配率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="召回率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="引用错误率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="达标">—</td>
+              </tr>
+              <tr>
+                <th scope="row">w/o:temporal_filter</th>
+                <td data-label="被移除模块">时序版本过滤：按查询时间剔除已废止条款</td>
+                <td data-label="匹配率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="召回率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="引用错误率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="达标">—</td>
+              </tr>
+              <tr>
+                <th scope="row">w/o:negative_hard_constraint</th>
+                <td data-label="被移除模块">负面清单硬约束注入：命中即中断生成并给替代建议</td>
+                <td data-label="匹配率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="召回率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="引用错误率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="达标">—</td>
+              </tr>
+              <tr>
+                <th scope="row">w/o:rerank</th>
+                <td data-label="被移除模块">Cross-Encoder 重排：对召回结果做精排</td>
+                <td data-label="匹配率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="召回率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="引用错误率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="达标">—</td>
+              </tr>
+              <tr>
+                <th scope="row">w/o:hybrid_retrieval</th>
+                <td data-label="被移除模块">混合检索：BM25 与向量双路召回（关闭后仅走向量）</td>
+                <td data-label="匹配率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="召回率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="引用错误率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="达标">—</td>
+              </tr>
+              <tr>
+                <th scope="row">w/o:query_decomposition</th>
+                <td data-label="被移除模块">查询分解：结构化抽取与术语归一化</td>
+                <td data-label="匹配率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="召回率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="引用错误率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="达标">—</td>
+              </tr>
+              <tr>
+                <th scope="row">w/o:citation_validator</th>
+                <td data-label="被移除模块">引用校验器：标记存在性 / 上下文包含性 / 姿态禁语兜底</td>
+                <td data-label="匹配率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="召回率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="引用错误率"><span class="badge badge-na">N/A</span></td>
+                <td data-label="达标">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="eval-matrix-note">另单独统计<strong>姿态违规</strong>：输出出现「合规 / 可以申报」类结论性措辞即计违规——正向放行与反向判定同属禁语；渲染层注入的免责声明先剔除再扫，不误伤正文。</p>
+      </div>
+
+      <details class="eval-details">
+        <summary class="eval-summary">数字从哪里来 · 如何复算</summary>
+        <div class="eval-details-body">
+          <p>接上真实管线后，跑批命令（在仓库根目录执行）：</p>
+          <code class="eval-cmd">python -m eval.runner --cases &lt;数据仓&gt;/审计公告/案例标注表.csv --registry &lt;registry 导出&gt;.json --ablate-all --out runs/ablation</code>
+          <ul>
+            <li>案例标注表（120 条）在团队数据仓、不随仓库分发：审计公告是评测出题集，进检索索引＝答案泄露（开发红线第 4 条）；</li>
+            <li>当前 <code>eval/pipeline.py</code> 为占位实现（NullPipeline），跑批数字没有实验意义——本区块因此诚实标注 N/A：绝不拿 0 或 1 冒充，也不预填预估数字；</li>
+            <li>有 N/A 项时 all_pass 为 false：不能靠缺失项过关；</li>
+            <li>口径细节见 <code>eval/README.md</code> 与 <code>eval/metrics.py</code>；跑批产物 <code>metrics.json</code> / <code>ablation_matrix.csv</code> 即本区块的数字来源，跑完即回填。</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
     <!-- 未命中提示 -->
     <section class="notice" id="notice" hidden>
       <div class="notice-card" role="status">
@@ -143,6 +271,7 @@
             <li>文号、发布日期、效力状态：<code>04_政策语料/00_工作区/registry.json</code> 与 <code>04_政策语料/政策文件清单-初稿.csv</code>；</li>
             <li>条款原文摘录：<code>04_政策语料/03_清洗文本/</code> 对应文件（逐字摘录）；</li>
             <li>典型案例来源：<code>04_政策语料/审计公告/案例标注表.csv</code> 的「改编后申报场景描述」列（案例 C139、C83、C02）；</li>
+            <li>评测口径与验收线：<code>eval/metrics.py</code>（团队手册 3.4 三指标）与 <code>eval/config.py</code>（六组消融开关）；跑批数字待真实管线接入后由 <code>eval/runner.py</code> 产物回填，当前诚实标注 N/A；</li>
             <li>标注习惯：原文载明施行条款的，按原文标注施行日期；未载明施行条款的，按 registry「发布日期」标注印发日期，不作推断。</li>
           </ul>
         </div>
