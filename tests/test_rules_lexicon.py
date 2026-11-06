@@ -48,9 +48,11 @@ class TestBatch1MergeWords:
         )
 
     def test_cropland_terms_extended(self) -> None:
-        # 2026-11-06 边界收窄：「占用耕地」保留，「造林」不得单独入库（见 TestBoundaryNarrowing）
-        assert "占用耕地" in FORBIDDEN_USE_CONCEPTS["耕地保护与非粮化"]
-        assert "造林" not in FORBIDDEN_USE_CONCEPTS["耕地保护与非粮化"]
+        # 2026-11-06 边界收窄两轮：「占用耕地」保留；「造林」「种树」都是合法项目内容，不得入库
+        cropland = FORBIDDEN_USE_CONCEPTS["耕地保护与非粮化"]
+        assert "占用耕地" in cropland
+        assert "造林" not in cropland
+        assert "种树" not in cropland
 
     def test_dividend_terms_extended(self) -> None:
         # 2026-11-06 边界收窄：撤回「兑付」（中性付款动词），「收益分配」亦不收（合规常见）
@@ -94,6 +96,12 @@ class TestExcludedWords:
     def test_neutral_words_excluded(self) -> None:
         for word in ("入股", "招标", "采购", "公示", "项目库", "绩效", "验收", "专户"):
             assert word not in _ALL_TERMS, f"中性词「{word}」不应进词典（会误伤合规负对照）"
+
+    def test_legal_project_content_words_excluded(self) -> None:
+        """合法项目内容词不得入库：荒山造林/荒山种树/按期兑付 都是正常申报表述。"""
+        for word in ("造林", "种树", "兑付", "收益分配"):
+            assert word not in _ALL_TERMS, (
+                f"合法项目内容词「{word}」不应进词典（实测会让合规项目被打上命中提示）")
 
     def test_high_weight_trigger_excluded(self) -> None:
         # 「补助」「补贴」是高权重触发词（负对照 N1 写作纪律点名），不得新增进词典
@@ -152,6 +160,12 @@ class TestBoundaryNarrowing:
             "我村在林业部门认定的宜林荒山实施造林项目，栽植乡土阔叶树种，配套作业便道。")
         assert result.hits == (), f"荒山造林被误报：{[h.rule.doc_no for h in result.hits]}"
 
+    def test_mountain_tree_planting_is_compliant_no_hit(self) -> None:
+        """荒山种树（宜林地）不得因「种树」二字命中耕地保护类条款（数据仓 N4 的 C160）。"""
+        result = NegRuleMatcher(self._store()).match(
+            "我村在宜林地种树八十亩，树种为乡土阔叶树，作业设计已报县级林业主管部门备案。")
+        assert result.hits == (), f"荒山种树被误报：{[h.rule.doc_no for h in result.hits]}"
+
     def test_repaying_project_payment_is_compliant_no_hit(self) -> None:
         """按期兑付工程款（含贷款本息）不得因「兑付」命中分红类条款。"""
         result = NegRuleMatcher(self._store()).match(
@@ -175,3 +189,9 @@ class TestBoundaryNarrowing:
         result = NegRuleMatcher(self._store()).match("拟用帮扶资金向村民分红。")
         assert result.hits
         assert "分红" in result.hits[0].matched_description_terms
+
+    def test_farmland_tree_planting_still_hits(self) -> None:
+        """违规形态「占用耕地种树」仍须命中——删「种树」不等于放过耕地种树。"""
+        result = NegRuleMatcher(self._store()).match("拟在基本农田和占用耕地种树八十亩。")
+        assert result.hits
+        assert "占用耕地" in result.hits[0].matched_description_terms
