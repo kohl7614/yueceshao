@@ -48,6 +48,26 @@ VALID_SUBJECT_TYPES = frozenset({"村集体经济组织", "农民专业合作社
 # ---- LLM 文本字段的姿态禁语（结论性措辞）----
 FORBIDDEN_PHRASES: tuple[str, ...] = ("合规", "可以申报", "违规", "不合规")
 
+# 姿态禁语 → 中性口径的确定性替换（entail reason 专用；顺序敏感：长的在前）
+_ENTAIL_POSTURE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("不合规", "落入条款禁止范围"),
+    ("可以申报", "落入允许范围"),
+    ("违规", "落入条款禁止范围"),
+    ("合规", "符合允许范围"),
+)
+
+
+def sanitize_entailment_text(raw: str) -> str:
+    """把 LLM 蕴含输出里的姿态禁语确定性替换成中性口径（字符串级，不解析 JSON）。
+
+    qwen 实测会把「违规」写进 reason 导致 ``check_llm_text`` 拒收——模型遵循度不够时，
+    这是不依赖模型、不放松红线的兜底：禁语换成提示词里已规定的中性口径。
+    顺序敏感：「不合规」必须在「合规」之前替换，否则会残留成「不符合允许范围」。
+    """
+    for banned, neutral in _ENTAIL_POSTURE_REPLACEMENTS:
+        raw = raw.replace(banned, neutral)
+    return raw
+
 # ---- 文号模式（LLM 输出出现即失败：文号只能由元数据注入，不许可述）----
 _DOC_NO_PATTERN = re.compile(r"〔\d{4}〕\s*\d+\s*号")
 
