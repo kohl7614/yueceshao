@@ -31,12 +31,13 @@ def test_switch_names_and_docs_cover_each_other() -> None:
     """规范名清单与中文说明字典必须完全对应，防止加了开关忘了写说明。"""
     assert len(SWITCH_NAMES) == 6
     assert set(SWITCH_NAMES) == set(SWITCH_DOCS)
-    # 手册 3.4 明确点名的六组：时序过滤 / 负面硬约束 / 重排 / 混合 / 抽取分解 / 校验器
+    # 2026-11-08 任务B 重定义后的六组：时序过滤 / 稠密检索 / 规则扫描 / 蕴含复核 /
+    # 抽取分解 / 校验器（与 real_pipeline 实际模块一一对应）
     for expected in (
         "temporal_filter",
-        "negative_hard_constraint",
-        "rerank",
-        "hybrid_retrieval",
+        "dense_retrieval",
+        "rule_scan",
+        "entail_review",
         "query_decomposition",
         "citation_validator",
     ):
@@ -55,18 +56,18 @@ def test_unknown_switch_name_raises() -> None:
 def test_non_bool_value_raises() -> None:
     """开关只能是 bool；传 0/1 这类"看似能跑"的值要当场报错。"""
     with pytest.raises(TypeError):
-        AblationSwitches.from_mapping({"rerank": 0})
+        AblationSwitches.from_mapping({"dense_retrieval": 0})
     with pytest.raises(TypeError):
-        AblationSwitches(rerank="true")  # type: ignore[arg-type]
+        AblationSwitches(dense_retrieval="true")  # type: ignore[arg-type]
 
 
 def test_from_mapping_only_overrides_given_keys() -> None:
     """只覆盖传入的键，其余保持默认 True。"""
-    switches = AblationSwitches.from_mapping({"rerank": False})
-    assert switches.is_enabled("rerank") is False
+    switches = AblationSwitches.from_mapping({"dense_retrieval": False})
+    assert switches.is_enabled("dense_retrieval") is False
     assert switches.is_enabled("temporal_filter") is True
-    assert switches.disabled() == ("rerank",)
-    assert switches.ablated_label() == "w/o:rerank"
+    assert switches.disabled() == ("dense_retrieval",)
+    assert switches.ablated_label() == "w/o:dense_retrieval"
 
 
 def test_from_json_file(tmp_path) -> None:
@@ -92,55 +93,55 @@ def test_from_env_parses_truthy_and_falsy() -> None:
     """环境变量支持 1/0、true/false 等写法，非法取值报错。"""
     switches = AblationSwitches.from_env(
         environ={
-            "YUECESHAO_ABLATION_RERANK": "0",
-            "YUECESHAO_ABLATION_HYBRID_RETRIEVAL": "false",
+            "YUECESHAO_ABLATION_DENSE_RETRIEVAL": "0",
+            "YUECESHAO_ABLATION_RULE_SCAN": "false",
             "YUECESHAO_ABLATION_TEMPORAL_FILTER": "1",
         }
     )
-    assert switches.disabled() == ("rerank", "hybrid_retrieval")
+    assert switches.disabled() == ("dense_retrieval", "rule_scan")
 
     with pytest.raises(ValueError, match="取值非法"):
-        AblationSwitches.from_env(environ={"YUECESHAO_ABLATION_RERANK": "maybe"})
+        AblationSwitches.from_env(environ={"YUECESHAO_ABLATION_DENSE_RETRIEVAL": "maybe"})
 
 
 def test_from_env_rejects_misspelled_switch_name() -> None:
     """带前缀但后缀拼错的环境变量必须抛错，不能被静默忽略。
 
-    这是最容易踩的坑：``RERANKK`` 多打一个 K，如果只遍历已知开关名，这个变量会被
-    直接跳过——使用者以为 rerank 已关闭，实际它仍开着，消融结论整个失真。
+    这是最容易踩的坑：``DENSE_RETRIEVALL`` 多打一个 L，如果只遍历已知开关名，这个变量会被
+    直接跳过——使用者以为稠密检索已关闭，实际它仍开着，消融结论整个失真。
     """
     with pytest.raises(ValueError, match="无法识别"):
-        AblationSwitches.from_env(environ={"YUECESHAO_ABLATION_RERANKK": "0"})
+        AblationSwitches.from_env(environ={"YUECESHAO_ABLATION_DENSE_RETRIEVALL": "0"})
 
     # 多个拼错时一次全报出来，不让人一个个试；混入的合法开关不得被误报
     with pytest.raises(ValueError) as excinfo:
         AblationSwitches.from_env(
             environ={
-                "YUECESHAO_ABLATION_RERANKK": "0",
-                "YUECESHAO_ABLATION_HYBRID_RETRIEVALL": "0",
+                "YUECESHAO_ABLATION_DENSE_RETRIEVALL": "0",
+                "YUECESHAO_ABLATION_RULE_SCANL": "0",
                 "YUECESHAO_ABLATION_TEMPORAL_FILTER": "0",  # 合法，不该进报错清单
             }
         )
     message = str(excinfo.value)
     reported = message.split("无法识别：", 1)[1].split("；", 1)[0]
-    assert "RERANKK" in reported
-    assert "HYBRID_RETRIEVALL" in reported
+    assert "DENSE_RETRIEVALL" in reported
+    assert "RULE_SCANL" in reported
     assert "TEMPORAL_FILTER" not in reported
 
     # 前缀不匹配的普通环境变量不能触发误报（例如别的项目变量）
     switches = AblationSwitches.from_env(
-        environ={"OTHER_ABLATION_RERANKK": "0", "YUECESHAO_ABLATION_RERANK": "0"}
+        environ={"OTHER_ABLATION_DENSE_RETRIEVALL": "0", "YUECESHAO_ABLATION_DENSE_RETRIEVAL": "0"}
     )
-    assert switches.disabled() == ("rerank",)
+    assert switches.disabled() == ("dense_retrieval",)
 
 
 def test_with_overrides_is_immutable_and_ordered() -> None:
     """派生新快照不改动原对象，disabled() 按规范顺序输出。"""
     base = AblationSwitches.default()
-    derived = base.with_overrides(temporal_filter=False, negative_hard_constraint=False)
+    derived = base.with_overrides(temporal_filter=False, entail_review=False)
     assert base.is_full_system()  # 原对象不受影响
-    assert derived.disabled() == ("temporal_filter", "negative_hard_constraint")
-    assert derived.ablated_label() == "w/o:temporal_filter+negative_hard_constraint"
+    assert derived.disabled() == ("temporal_filter", "entail_review")
+    assert derived.ablated_label() == "w/o:temporal_filter+entail_review"
 
 
 def test_all_disabled_and_to_dict() -> None:

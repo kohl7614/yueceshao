@@ -183,24 +183,24 @@
                 <td data-label="达标">—</td>
               </tr>
               <tr>
-                <th scope="row">w/o:negative_hard_constraint</th>
-                <td data-label="被移除模块">负面清单硬约束注入：命中即中断生成并给替代建议</td>
+                <th scope="row">w/o:dense_retrieval</th>
+                <td data-label="被移除模块">稠密检索：embedding 编码 + Chroma top-k（关闭后①段无检索上下文，规则块仍保留）</td>
                 <td data-label="匹配率"><span class="badge badge-na">N/A</span></td>
                 <td data-label="召回率"><span class="badge badge-na">N/A</span></td>
                 <td data-label="引用错误率"><span class="badge badge-na">N/A</span></td>
                 <td data-label="达标">—</td>
               </tr>
               <tr>
-                <th scope="row">w/o:rerank</th>
-                <td data-label="被移除模块">Cross-Encoder 重排：对召回结果做精排</td>
+                <th scope="row">w/o:rule_scan</th>
+                <td data-label="被移除模块">规则扫描：负面清单全量确定性匹配（关闭后②段仅剩 LLM 蕴含命中）</td>
                 <td data-label="匹配率"><span class="badge badge-na">N/A</span></td>
                 <td data-label="召回率"><span class="badge badge-na">N/A</span></td>
                 <td data-label="引用错误率"><span class="badge badge-na">N/A</span></td>
                 <td data-label="达标">—</td>
               </tr>
               <tr>
-                <th scope="row">w/o:hybrid_retrieval</th>
-                <td data-label="被移除模块">混合检索：BM25 与向量双路召回（关闭后仅走向量）</td>
+                <th scope="row">w/o:entail_review</th>
+                <td data-label="被移除模块">蕴含复核：LLM 对 G01-G11 载体的二次确认（关闭后②段仅剩规则命中）</td>
                 <td data-label="匹配率"><span class="badge badge-na">N/A</span></td>
                 <td data-label="召回率"><span class="badge badge-na">N/A</span></td>
                 <td data-label="引用错误率"><span class="badge badge-na">N/A</span></td>

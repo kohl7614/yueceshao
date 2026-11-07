@@ -111,6 +111,12 @@ def run_group(
     """在一个消融配置下跑完全部案例。"""
     result = GroupResult(label=switches.ablated_label(), switches=switches)
     with ablation_context(switches) as trace:
+        # 任务B：把开关真正传给管线（RealPipeline 实现 configure；null/rules 管线
+        # 无此方法则跳过，继续走 contextvar，行为不变）。runner 与管线共享同一
+        # trace——bypass 记录进 result.trace 汇总。
+        configure = getattr(pipeline, "configure", None)
+        if callable(configure):
+            configure(switches, trace)
         for case in cases:
             prediction = pipeline.predict(case)
             result.outcomes.append(evaluate_case(case, prediction, registry))

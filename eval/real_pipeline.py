@@ -43,17 +43,35 @@ class RealPipeline:
 
     :param config_path: 本机 config.json（索引/模型/数据仓路径）；None 用仓库根默认
     :param llm: 注入 LLM（测试用）；None 时按 config 装配（MockLLM 或 qwen 取决于装配方）
+    :param switches: 消融开关快照（任务B）；None＝完整系统，之后可用 :meth:`configure` 覆盖
     """
 
     name = "real"
 
-    def __init__(self, config_path: Path | str | None = None, llm: Any = None) -> None:
+    def __init__(
+        self,
+        config_path: Path | str | None = None,
+        llm: Any = None,
+        switches: Any = None,
+    ) -> None:
         # 局部 import：本模块被 eval.runner 以 --pipeline real 加载时才引入 app 重依赖；
         # CI（无索引/无 qwen key）跑其他 pipeline 不会因此崩。
         from app.real_components import RealCheckupPipeline
 
         self._pipeline = RealCheckupPipeline(config_path, llm=llm)
+        if switches is not None:
+            self.configure(switches)
         logger.info("RealPipeline 就绪（真实检索＋规则＋LLM 蕴含复核）")
+
+    def configure(self, switches: Any, trace: Any | None = None) -> None:
+        """显式注入消融开关与 trace（任务B：runner 把 AblationSwitches 真正传给管线）。
+
+        :param switches: :class:`eval.config.AblationSwitches` 快照
+        :param trace: 与 runner 共享的 :class:`eval.gating.SwitchTrace`；None 时自建
+        """
+        from eval.gating import SwitchTrace
+
+        self._pipeline.components.set_ablation(switches, trace or SwitchTrace())
 
     def predict(self, case: EvalCase) -> CasePrediction:
         """对一条案例跑完整真实管线，产出评测侧预测。
@@ -77,4 +95,7 @@ class RealPipeline:
             refs=tuple(refs),
             citations=tuple(refs),
             text=result.rendered_text,
+            degraded=result.degraded,
+            attempts=result.attempts,
+            entail_failed=result.entail_failed,
         )

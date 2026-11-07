@@ -25,11 +25,15 @@ __all__ = [
 
 #: 六组消融开关的规范名（顺序即报告与配置文件的输出顺序）。
 #: 名称一经发布不得更改——评测报告要按名字做跨版本对比。
+#: 2026-11-08 任务B 经负责人批准重定义一次：移除真实管线未实装的
+#: rerank / hybrid_retrieval / negative_hard_constraint（旧名一律当场报错，
+#: 杜绝"关掉不存在的模块"的假消融），新增与 real_pipeline 实际模块一一对应的
+#: dense_retrieval / rule_scan / entail_review；重定义前后的报告不做跨版本对比。
 SWITCH_NAMES: tuple[str, ...] = (
     "temporal_filter",  # 时序版本过滤
-    "negative_hard_constraint",  # 负面清单硬约束注入
-    "rerank",  # Cross-Encoder 重排
-    "hybrid_retrieval",  # BM25 + 稠密混合检索（关闭＝退化为仅稠密）
+    "dense_retrieval",  # 稠密检索（Chroma + embedding 编码）
+    "rule_scan",  # 负面清单规则全量确定性扫描
+    "entail_review",  # LLM 蕴含复核（G01-G11 载体）
     "query_decomposition",  # 查询结构化抽取 / 术语归一化的分解步骤
     "citation_validator",  # 引用确定性校验器
 )
@@ -37,10 +41,10 @@ SWITCH_NAMES: tuple[str, ...] = (
 #: 每个开关的中文说明，供报告与文档直接引用，避免同一概念在不同文件里叫法不一致。
 SWITCH_DOCS: dict[str, str] = {
     "temporal_filter": "时序版本过滤：按查询时间剔除已废止条款",
-    "negative_hard_constraint": "负面清单硬约束注入：命中即中断生成并给替代建议",
-    "rerank": "Cross-Encoder 重排：对召回结果做精排",
-    "hybrid_retrieval": "混合检索：BM25 与向量双路召回（关闭后仅走向量）",
-    "query_decomposition": "查询分解：结构化抽取与术语归一化",
+    "dense_retrieval": "稠密检索：embedding 编码 + Chroma top-k（关闭后①段无检索上下文）",
+    "rule_scan": "规则扫描：负面清单全量确定性匹配（关闭后②段仅剩 LLM 蕴含命中）",
+    "entail_review": "蕴含复核：LLM 对 G01-G11 载体的二次确认（关闭后②段仅剩规则命中）",
+    "query_decomposition": "查询分解：结构化抽取与术语归一化（关闭后生成段拿不到抽取结果）",
     "citation_validator": "引用校验器：标记存在性 / 上下文包含性 / 姿态禁语兜底",
 }
 
@@ -70,9 +74,9 @@ class AblationSwitches:
     """
 
     temporal_filter: bool = True
-    negative_hard_constraint: bool = True
-    rerank: bool = True
-    hybrid_retrieval: bool = True
+    dense_retrieval: bool = True
+    rule_scan: bool = True
+    entail_review: bool = True
     query_decomposition: bool = True
     citation_validator: bool = True
 

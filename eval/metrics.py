@@ -121,12 +121,19 @@ class CasePrediction:
     :param citations: 报告中出现的引用标识（用于引用错误率）
     :param text: 报告全文（仅用于姿态禁语扫描，可选）。照实传全文即可——渲染层强制的
         免责声明会在扫描前由 :func:`strip_disclaimer` 剔除，不需要调用方自己裁剪。
+    :param degraded: 管线是否触发 A9 降级（仅真实管线提供；其余管线为 ``None``，
+        明细留空、不冒充 0/1）
+    :param attempts: 生成侧实际尝试次数（来源同 ``degraded``）
+    :param entail_failed: LLM 蕴含复核是否失败降级（来源同 ``degraded``）
     """
 
     verdict: str
     refs: tuple[str, ...] = field(default_factory=tuple)
     citations: tuple[str, ...] = field(default_factory=tuple)
     text: str = ""
+    degraded: bool | None = None
+    attempts: int | None = None
+    entail_failed: bool | None = None
 
 
 @dataclass
@@ -145,6 +152,9 @@ class CaseOutcome:
     citations_bad: int
     forbidden_hits: tuple[str, ...]
     notes: str = ""
+    degraded: bool | None = None
+    attempts: int | None = None
+    entail_failed: bool | None = None
 
     def to_row(self) -> dict[str, Any]:
         """扁平化，便于写 CSV。"""
@@ -161,6 +171,9 @@ class CaseOutcome:
             "citations_bad": self.citations_bad,
             "forbidden_hits": ";".join(self.forbidden_hits),
             "notes": self.notes,
+            "degraded": "" if self.degraded is None else int(self.degraded),
+            "attempts": "" if self.attempts is None else self.attempts,
+            "entail_failed": "" if self.entail_failed is None else int(self.entail_failed),
         }
 
 
@@ -222,6 +235,9 @@ def evaluate_case(
         citations_bad=citations_bad,
         forbidden_hits=_scan_forbidden(prediction.text),
         notes=case.notes,
+        degraded=prediction.degraded,
+        attempts=prediction.attempts,
+        entail_failed=prediction.entail_failed,
     )
 
 
