@@ -539,14 +539,32 @@ class RealComponents:
             else MatchResult(hits=(), description_terms=()))
 
         hits: list[dict[str, Any]] = []
-        dense_markers: dict[tuple[int, int], str] = {}
+        # 同一 (文件序号, 条序号) 在真实索引里可能对应**多个不同原文的分块**（实测数千组），
+        # 因此不能只留一个标记——复用时必须挑「原文确实覆盖该规则条款」的那块（issue #52）。
+        dense_candidates: dict[tuple[int, int], list[tuple[str, str]]] = {}
         for index, hit in enumerate(retrieval.hits, start=1):
             marker = f"[C{index}]"
             serial = hit.metadata.get("serial")
             clause_index = hit.metadata.get("clause_index")
             if isinstance(serial, int) and isinstance(clause_index, int) and clause_index >= 0:
-                dense_markers[(serial, clause_index)] = marker
+                dense_candidates.setdefault((serial, clause_index), []).append(
+                    (marker, hit.text or ""))
             hits.append(hit_to_orchestration_hit(hit, marker))
+
+        def covering_dense_marker(
+            doc_index: int, clause_index: int | None, clause_text: str,
+        ) -> str | None:
+            """找出原文覆盖该条款文本的稠密块标记；没有就返回 None（绝不复用不覆盖的块）。
+
+            复用稠密标记的前提是「②段引用的那个块里找得到规则条文」，否则用户对照原文会看到
+            条款号对得上、正文对不上（issue #52：实测 25 次复用里有 3 次引用块不含规则原文）。
+            """
+            if clause_index is None or not clause_text:
+                return None
+            for marker, text in dense_candidates.get((doc_index, clause_index), ()):
+                if clause_text in text:
+                    return marker
+            return None
 
         negative_hits: list[NegativeHit] = []
         seen_negative: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
@@ -557,10 +575,7 @@ class RealComponents:
         for rule_hit in match.hits:
             rule = rule_hit.rule
             clause_index = clause_no_to_index(rule.clause_no)
-            marker = (
-                dense_markers.get((rule.doc_index, clause_index))
-                if clause_index is not None else None
-            )
+            marker = covering_dense_marker(rule.doc_index, clause_index, rule.clause_text)
             rule_key = (rule.doc_index, rule.clause_no, rule.clause_text)
             if marker is None:
                 marker = text_markers.get(rule_key)
