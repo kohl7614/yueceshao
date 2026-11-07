@@ -105,6 +105,7 @@ class PipelineResult:
     attempts: int                    # 生成侧实际尝试次数
     failed_sections: tuple[str, ...] = field(default=())
     elapsed_ms: int = 0
+    entail_failed: bool = False      # LLM 蕴含复核失败降级（②段退化为仅规则命中）
     disclaimer: str = DISCLAIMER_TEXT  # 响应显式携带（客户端无需解析文本）
 
     def to_api_dict(self) -> dict:
