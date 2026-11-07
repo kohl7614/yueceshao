@@ -203,10 +203,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--pipeline",
-        choices=("null", "rules"),
+        choices=("null", "rules", "real"),
         default="null",
         help="被测管线：null=占位（链路验证）；rules=规则引擎基线"
-             "（需根目录 config.json 指向数据仓）",
+             "（需根目录 config.json 指向数据仓）；real=完整真实管线"
+             "（真检索＋真规则＋真 LLM 蕴含复核，需索引/模型/qwen key 到位）",
     )
     parser.add_argument(
         "--ablate-all",
@@ -237,6 +238,15 @@ def _build_pipeline(name: str) -> Pipeline:
         except FileNotFoundError as exc:
             raise SystemExit(
                 f"--pipeline rules 需要根目录 config.json 且数据仓可访问：{exc}"
+            ) from exc
+    if name == "real":
+        from eval.real_pipeline import RealPipeline  # 局部 import：CI 不装重依赖也能 import
+
+        try:
+            return RealPipeline()
+        except FileNotFoundError as exc:
+            raise SystemExit(
+                f"--pipeline real 需要根目录 config.json 且索引/模型/数据仓可访问：{exc}"
             ) from exc
     raise ValueError(f"未知管线：{name}")
 
