@@ -37,7 +37,6 @@ from rag.indexer import (
     to_record,
 )
 
-
 # ================================================================ 测试替身
 
 
@@ -90,7 +89,7 @@ class FakeStore:
     def upsert(self, records: list[ChunkRecord], vectors: list[list[float]]) -> None:
         """按 chunk_id 幂等写入。"""
         assert len(records) == len(vectors), "记录数与向量数必须一致"
-        for record, vector in zip(records, vectors):
+        for record, vector in zip(records, vectors, strict=False):
             self.rows[record.chunk_id] = record
             self.vectors[record.chunk_id] = list(vector)
 

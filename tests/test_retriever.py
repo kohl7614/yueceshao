@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,6 @@ from rag.retriever import (
     build_where,
     is_retrievable,
 )
-
 
 # ================================================================ 测试替身
 
@@ -111,7 +111,10 @@ def make_row(
         "is_preamble": False,
         "is_appendix": False,
     }
-    return (chunk_id, f"{clause} 产业园建设与基础设施配套补助，不得用于偿还债务。", metadata, distance)
+    return (
+        chunk_id,
+        f"{clause} 产业园建设与基础设施配套补助，不得用于偿还债务。",
+        metadata, distance)
 
 
 # ================================================================ where 构造
@@ -301,7 +304,9 @@ def test_citation_empty_when_doc_no_missing() -> None:
     全库 6267 块（34%）来自无文号文件（函件、内部通知）。若 citation 给"第十二条"
     这种半截引用，校验器拿去 registry 反查必然查不到，等于把查不动的依据混进报告。
     """
-    hit = Hit("1-0001", "正文", 0.9, 0.1, {"doc_no": "", "clause": "第十二条", "title": "某内部通知"})
+    hit = Hit(
+        "1-0001", "正文", 0.9, 0.1,
+        {"doc_no": "", "clause": "第十二条", "title": "某内部通知"})
 
     assert hit.citation == "", "缺文号时严格引用串必须为空"
     assert not hit.has_doc_no
@@ -309,12 +314,16 @@ def test_citation_empty_when_doc_no_missing() -> None:
 
 def test_reference_falls_back_to_title() -> None:
     """展示用引用要有兜底：没文号就用标题，读者仍能定位到文件。"""
-    hit = Hit("1-0001", "正文", 0.9, 0.1, {"doc_no": "", "clause": "第十二条", "title": "某内部通知"})
+    hit = Hit(
+        "1-0001", "正文", 0.9, 0.1,
+        {"doc_no": "", "clause": "第十二条", "title": "某内部通知"})
 
     assert hit.reference == "某内部通知 第十二条"
     assert hit.has_doc_no is False
 
-    with_doc = Hit("1-0002", "正文", 0.9, 0.1, {"doc_no": "粤财农〔2020〕106号", "clause": "第一条"})
+    with_doc = Hit(
+        "1-0002", "正文", 0.9, 0.1,
+        {"doc_no": "粤财农〔2020〕106号", "clause": "第一条"})
     assert with_doc.reference == "粤财农〔2020〕106号 第一条"
 
 
@@ -419,7 +428,10 @@ def test_chroma_backend_end_to_end(tmp_path: Path) -> None:
         """把关键词映射到固定向量：含"失效"的落在另一侧，便于构造可分辨的距离。"""
 
         def encode_documents(self, texts: list[str]) -> list[list[float]]:
-            return [[1.0, 0.0, 0.0, 0.1] if "失效" not in text else [0.0, 1.0, 0.0, 0.1] for text in texts]
+            return [
+                [1.0, 0.0, 0.0, 0.1] if "失效" not in text else [0.0, 1.0, 0.0, 0.1]
+                for text in texts
+            ]
 
         def encode_query(self, text: str) -> list[float]:
             return [1.0, 0.0, 0.0, 0.1]
@@ -551,7 +563,8 @@ def test_chroma_ne_where_lets_missing_category_through(tmp_path: Path) -> None:
 
     # 1) 向量库那一层：$ne 条件确实放行了这条脏块
     leaked = backend.search([1.0, 0.0], 5, build_where(RetrievalConfig()))
-    assert [row[0] for row in leaked] == ["9-0001"], "若这里不再放行，说明 chromadb 语义变了，可简化兜底"
+    assert [row[0] for row in leaked] == ["9-0001"], \
+        "若这里不再放行，说明 chromadb 语义变了，可简化兜底"
 
     # 2) 检索端兜底：fail-closed 把它拦住
     result = DenseRetriever(FlatEmbedder(), backend).retrieve("审计口径")
@@ -560,9 +573,7 @@ def test_chroma_ne_where_lets_missing_category_through(tmp_path: Path) -> None:
 
 # ================================================================ 占位文号不得混进引用（红线①）
 
-import re as _re
-
-REAL_DOC_NO = _re.compile(r"〔\d{4}〕\d+号")
+REAL_DOC_NO = re.compile(r"〔\d{4}〕\d+号")
 
 
 def test_has_doc_no_prefers_metadata_flag() -> None:

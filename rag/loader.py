@@ -282,7 +282,9 @@ def load_registry(
     """
     payloads = read_registry(registry_path)
     documents = tuple(iter_documents(payloads, include_audit=include_audit))
-    excluded = sum(1 for item in payloads if _as_text(item, "类别") == AUDIT_CATEGORY) if not include_audit else 0
+    excluded = (
+        sum(1 for item in payloads if _as_text(item, "类别") == AUDIT_CATEGORY)
+        if not include_audit else 0)
 
     result = LoadResult(documents=documents, total=len(payloads), excluded_audit=excluded)
     logger.info(

@@ -4,6 +4,11 @@
 （`.gitignore` 已挡 `data/`；红线第 4 条：审计公告是评测出题集，进检索索引＝答案泄露）。
 
 本模块只负责"按约定 schema 读入"，不内置任何案例内容、不写任何文号常量。
+
+**列名别名（feat/eval-rules-pipeline 起）**：团队数据仓的实际标注表使用中文列名
+（案例编号／改编后申报场景描述_体检输入／预期命中预警／历史适用条款_文号及条款号／备注），
+读取时自动映射到标准列；「预期命中预警」按文案推断 hit／miss（含「应命中／应提示」→hit，
+含「不应命中」→miss，其余→未标注），「历史适用条款」按正则提取「文号＋条款号」对。
 schema 如下（UTF-8，带表头）：
 
 ===============  ======  ==========================================================
@@ -23,9 +28,10 @@ from __future__ import annotations
 
 import csv
 import logging
+import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Sequence
 
 __all__ = [
     "DatasetError",
@@ -34,6 +40,8 @@ __all__ = [
     "load_cases",
     "REQUIRED_COLUMNS",
     "VERDICTS",
+    "COLUMN_ALIASES",
+    "extract_refs_from_text",
 ]
 
 logger = logging.getLogger(__name__)
@@ -43,6 +51,82 @@ REQUIRED_COLUMNS: tuple[str, ...] = ("case_id", "query")
 
 #: 合法判定取值。
 VERDICTS: tuple[str, ...] = ("hit", "miss")
+
+#: 中文列名 → 标准列名（团队数据仓实际标注表的表头）。
+COLUMN_ALIASES: dict[str, str] = {
+    "case_id": "案例编号",
+    "query": "改编后申报场景描述_体检输入",
+    "expected_verdict": "预期命中预警",
+    "expected_refs": "历史适用条款_文号及条款号",
+    "notes": "备注",
+}
+
+#: 「文号＋条款号」提取：条款号**必需**（条级引擎与条级标注对齐；纯文号与
+#: 「第（二）项」项级引用一律不收——宁漏勿错）。只认全形文号，
+#: 不追「106号第十九条」式简写。
+REF_EXTRACT_PATTERN = re.compile(
+    r"([\u4e00-\u9fa5]{2,10}〔\d{4}〕\d+号)第([一二三四五六七八九十百零]+)条")
+
+#: 提取结果的引导词剥除表：正则前缀字符类可能把普通行文（如「现行参照载体」）
+#: 吃进文号前缀，而机关简称不会以这些词开头——逐个剥除即可。
+_LEADING_NOISE_PREFIXES: tuple[str, ...] = (
+    "现行参照载体", "参照载体", "现行参照", "参照", "现行", "依据", "对应", "载体",
+)
+
+
+def _strip_leading_noise(ref: str) -> str:
+    for prefix in _LEADING_NOISE_PREFIXES:
+        while ref.startswith(prefix):
+            ref = ref[len(prefix):]
+    return ref
+
+
+def normalize_ref(doc_no: str, clause_no: str) -> str:
+    """把「文号＋条款号」归一为跨形态可比的标识：``文号#条款序号``。
+
+    标注侧写「第二十条」、规则库写「二十」、组员展示「十八」——字符串级
+    比对永不相交（feat/eval-rules-pipeline 首跑发现）；统一转阿拉伯序号后
+    才可比。条款号无法转数字（如「未分条」）时退回原文，宁缺勿错。
+    """
+    from rag.chunker import zh_number_to_int  # 局部 import：复用有测试的数字转换
+
+    seq = zh_number_to_int(clause_no)
+    return f"{doc_no}#{seq}" if seq is not None else f"{doc_no}#{clause_no.strip()}"
+
+
+def extract_refs_from_text(text: str) -> tuple[str, ...]:
+    """从标注长文本提取期望条款（归一化标识，去重保序）。
+
+    按「；/;」分段后跳过含「不覆盖本情形」的段——那是"该规则不适用此案例"的
+    标注语义（与 scripts/eval_rules_engine.py 口径一致），其文号不得计入期望命中。
+    """
+    seen: dict[str, None] = {}
+    for segment in re.split(r"[；;]", text or ""):
+        if "不覆盖本情形" in segment or "不覆盖此情形" in segment:
+            continue
+        for doc_no, clause_cn in REF_EXTRACT_PATTERN.findall(segment):
+            seen.setdefault(normalize_ref(_strip_leading_noise(doc_no), clause_cn), None)
+    seen.pop("", None)
+    return tuple(seen)
+
+
+def _verdict_from_warning(text: str) -> str | None:
+    """从「预期命中预警」文案推断判定：应命中/应提示→hit；不应命中→miss；其余→未标注。"""
+    if "不应命中" in text or "不应提示" in text:
+        return "miss"
+    if "应命中" in text or "应提示" in text:
+        return "hit"
+    return None
+
+
+def _cell(row: dict, column: str) -> str:
+    """取标准列的值：标准列名优先，缺失时回落中文别名列。"""
+    if column in row:
+        return (row.get(column) or "").strip()
+    alias = COLUMN_ALIASES.get(column)
+    if alias and alias in row:
+        return (row.get(alias) or "").strip()
+    return ""
 
 
 class DatasetError(ValueError):
@@ -108,7 +192,10 @@ def load_cases(path: str | Path) -> list[EvalCase]:
     with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         header = tuple(reader.fieldnames or ())
-        missing = [column for column in REQUIRED_COLUMNS if column not in header]
+        missing = [
+            column for column in REQUIRED_COLUMNS
+            if column not in header and COLUMN_ALIASES.get(column) not in header
+        ]
         if missing:
             raise DatasetError(
                 f"标注表缺少必需列：{', '.join(missing)}；实际表头：{', '.join(header) or '(空)'}"
@@ -117,8 +204,8 @@ def load_cases(path: str | Path) -> list[EvalCase]:
         cases: list[EvalCase] = []
         seen_ids: set[str] = set()
         for line_no, row in enumerate(reader, start=2):
-            case_id = (row.get("case_id") or "").strip()
-            query = (row.get("query") or "").strip()
+            case_id = _cell(row, "case_id")
+            query = _cell(row, "query")
             if not case_id:
                 raise DatasetError(f"第 {line_no} 行 case_id 为空")
             if not query:
@@ -127,20 +214,28 @@ def load_cases(path: str | Path) -> list[EvalCase]:
                 raise DatasetError(f"第 {line_no} 行 case_id 重复：{case_id}")
             seen_ids.add(case_id)
 
-            verdict_raw = (row.get("expected_verdict") or "").strip().lower()
-            if verdict_raw and verdict_raw not in VERDICTS:
+            # 两条契约：标准列名下非法取值当场炸（原契约，宁炸勿假）；
+            # 中文「预期命中预警」列按文案推断，推断不了视为未标注（不炸）。
+            has_standard_verdict_column = "expected_verdict" in row
+            verdict_cell = _cell(row, "expected_verdict").lower()
+            if has_standard_verdict_column and verdict_cell and verdict_cell not in VERDICTS:
                 raise DatasetError(
-                    f"第 {line_no} 行（{case_id}）expected_verdict 非法：{verdict_raw!r}；"
+                    f"第 {line_no} 行（{case_id}）expected_verdict 非法：{verdict_cell!r}；"
                     f"应为 {' / '.join(VERDICTS)} 或留空"
                 )
+            if verdict_cell in VERDICTS:
+                verdict_raw = verdict_cell
+            else:
+                verdict_raw = _verdict_from_warning(verdict_cell) or ""
 
             cases.append(
                 EvalCase(
                     case_id=case_id,
                     query=query,
                     expected_verdict=verdict_raw or None,
-                    expected_refs=_split_refs(row.get("expected_refs") or ""),
-                    notes=(row.get("notes") or "").strip(),
+                    expected_refs=(extract_refs_from_text(_cell(row, "expected_refs"))
+                                   or _split_refs(_cell(row, "expected_refs"))),
+                    notes=_cell(row, "notes"),
                 )
             )
 

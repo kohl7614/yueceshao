@@ -996,7 +996,7 @@ def check_clause_continuity(chunks: Sequence[Chunk]) -> list[str]:
     sequence = clause_sequence(
         [chunk for chunk in chunks if chunk.structure == STRUCTURE_CLAUSE]
     )
-    for previous, current in zip(sequence, sequence[1:]):
+    for previous, current in zip(sequence, sequence[1:], strict=False):
         if current == previous + 1:
             continue
         if current <= previous:

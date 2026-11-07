@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator, TypeVar
+from typing import Any, TypeVar
 
 from eval.config import AblationSwitches
 
@@ -166,7 +167,7 @@ def gated(
                 return None
             return func(*args, **kwargs)
 
-        setattr(wrapper, "__ablation_switch__", switch)
+        wrapper.__ablation_switch__ = switch
         return wrapper  # type: ignore[return-value]
 
     return decorator
