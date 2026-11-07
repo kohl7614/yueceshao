@@ -282,8 +282,10 @@ class MockLLM:
         """查询结构化抽取（Mock：固定夹具）。"""
         return MOCK_EXTRACTION_JSON
 
-    def entail_review(self, description: str, hits: Sequence[dict[str, Any]]) -> str:
-        """负面条款蕴含复核（Mock：固定夹具；图节点当前不消费其结果）。"""
+    def entail_review(
+        self, description: str, hits: Sequence[dict[str, Any]], feedback: str | None = None,
+    ) -> str:
+        """负面条款蕴含复核（Mock：固定夹具；feedback 忽略，不联网）。"""
         return MOCK_ENTAILMENT_JSON
 
     def generate(
@@ -371,7 +373,9 @@ class QwenLLM:
             render_prompt(EXTRACTION_USER_TEMPLATE, description=description),
         )
 
-    def entail_review(self, description: str, hits: Sequence[dict[str, Any]]) -> str:
+    def entail_review(
+        self, description: str, hits: Sequence[dict[str, Any]], feedback: str | None = None,
+    ) -> str:
         """负面条款蕴含复核（gen.prompts 第二段提示词，条款块带标记与效力）。
 
         复核对象＝G01-G11 禁止用途载体（origin=negative-list），而非规则命中块——
@@ -379,14 +383,14 @@ class QwenLLM:
         禁止用途语义，故只喂 G01-G11 载体。
         """
         blocks = render_context_blocks(hits, origin=ORIGIN_NEGATIVE)
-        return self.complete(
-            NEGATIVE_ENTAILMENT_SYSTEM_PROMPT,
-            render_prompt(
-                NEGATIVE_ENTAILMENT_USER_TEMPLATE,
-                description=description,
-                clauses=blocks or "（本次没有待复核的负面条款块）",
-            ),
+        user_prompt = render_prompt(
+            NEGATIVE_ENTAILMENT_USER_TEMPLATE,
+            description=description,
+            clauses=blocks or "（本次没有待复核的负面条款块）",
         )
+        if feedback:
+            user_prompt += "\n\n" + feedback
+        return self.complete(NEGATIVE_ENTAILMENT_SYSTEM_PROMPT, user_prompt)
 
     def generate(
         self,
@@ -630,14 +634,17 @@ class RealComponents:
         """编排图规则回调：真负面清单全量扫描（确定性，无 LLM）。"""
         return self._plan(description).negative_hits
 
-    def _entail(self, description: str, hits: Sequence[dict[str, Any]]) -> str:
+    def _entail(
+        self, description: str, hits: Sequence[dict[str, Any]], feedback: str | None = None,
+    ) -> str:
         """②段蕴含复核：喂 **G01-G11 载体全集**（而不是"hits 里 origin=negative-list 的那些块"）。
 
         两者不等价：若某载体的条款已被稠密检索或规则命中覆盖，适配器会复用它已有的标记、
         不再追加新块，于是它不会以 origin=negative-list 出现在 hits 里——只按 hits 过滤就会把它
         静默漏掉（issue #48）。故这里显式取计划里的载体全集。
         """
-        return self._llm.entail_review(description, self._plan(description).carrier_hits)
+        return self._llm.entail_review(
+            description, self._plan(description).carrier_hits, feedback)
 
     def _generate(
         self,

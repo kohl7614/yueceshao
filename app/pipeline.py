@@ -158,7 +158,7 @@ class MockCheckupPipeline:
     def _rule_scan(self, description: str) -> tuple:
         return self._negative_hits
 
-    def _entail_review(self, description: str, hits) -> str:
+    def _entail_review(self, description: str, hits, feedback: str | None = None) -> str:
         return self._entailment_json
 
     def _generate(self, description: str, extraction_json: str, context_blocks: str,
