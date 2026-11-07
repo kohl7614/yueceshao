@@ -46,6 +46,7 @@ from gen.schema import (
     parse_entailments,
     parse_extraction,
     parse_generated,
+    sanitize_entailment_text,
 )
 from gen.validator import (
     MAX_RETRIES,
@@ -157,6 +158,7 @@ def build_checkup_graph(components: OrchestrationComponents) -> Any:
         for _attempt in range(MAX_RETRIES + 1):
             try:
                 raw = components.entail_review(state["description"], state["hits"], feedback)
+                raw = sanitize_entailment_text(raw)  # 姿态禁语 → 中性口径（不依赖模型遵循度）
                 verdicts = parse_entailments(raw, allowed=allowed)
                 break
             except SchemaError as exc:
