@@ -23,8 +23,10 @@
 from __future__ import annotations
 
 import logging
+import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from eval.dataset import EvalCase
 
@@ -168,7 +170,11 @@ def _scan_forbidden(text: str) -> tuple[str, ...]:
     先剔除渲染层免责声明（它含「合规」二字）再扫，否则真实管线的每份报告都会被误判。
     """
     body = strip_disclaimer(text)
-    return tuple(phrase for phrase in FORBIDDEN_PHRASES if phrase in body)
+    # 条款原文段豁免：逐字引用的政策原文可能天然含「合规发票」「违规举债」等字样，
+    # 那是语料本身而非系统措辞——姿态禁语只约束系统自己的结论（预审与真数据首跑发现）。
+    segments = re.split(r"条款原文[：:]", body)
+    outside_clauses = "".join(segments[::2])  # 奇数段为原文引文，扫描偶数段（系统措辞）
+    return tuple(phrase for phrase in FORBIDDEN_PHRASES if phrase in outside_clauses)
 
 
 def evaluate_case(
@@ -241,7 +247,9 @@ class MetricsSummary:
     def passes(self) -> dict[str, bool | None]:
         """逐项与验收线比对；不可计算的指标记 ``None``。"""
         return {
-            "match_rate": None if self.match_rate is None else self.match_rate >= self.thresholds.match_rate,
+            "match_rate": (
+                None if self.match_rate is None
+                else self.match_rate >= self.thresholds.match_rate),
             "recall": None if self.recall is None else self.recall >= self.thresholds.recall,
             "citation_error_rate": (
                 None

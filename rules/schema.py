@@ -55,7 +55,8 @@ class RuleRecord:
     doc_date: str                # 溯源_发布日期
     doc_category: str            # 溯源_类别
     group_decision: str          # 组裁定（接受/待人工）
-    curated_out: bool = False    # 负面清单口径出局（curation 标注非空即出局；2026-11-02 国市监21条先例）
+    curated_out: bool = False    # 负面清单口径出局（curation 标注非空即出局；
+                                 # 2026-11-02 国市监21条先例）
 
     @property
     def is_effective(self) -> bool:
@@ -93,7 +94,8 @@ class RuleStore:
         """构建规则库；records 为全部条款记录（含已失效）。"""
         self.records: tuple[RuleRecord, ...] = tuple(records)
         self.group_index: dict[str, tuple[RuleRecord, ...]] = self._build_group_index()
-        logger.info("规则库构建完成：全量 %d 条，等价组 %d 个", len(self.records), len(self.group_index))
+        logger.info("规则库构建完成：全量 %d 条，等价组 %d 个",
+                    len(self.records), len(self.group_index))
 
     def _build_group_index(self) -> dict[str, tuple[RuleRecord, ...]]:
         """按组号建索引，组内成员按展示优先级排序；未分组条款不进索引。"""

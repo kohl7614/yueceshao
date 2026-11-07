@@ -92,7 +92,9 @@ class TestPromptTemplates:
 
     def test_render_prompt_missing_placeholder_raises(self) -> None:
         with pytest.raises(ValueError, match="缺占位符"):
-            render_prompt(GENERATION_USER_TEMPLATE, description="只给了 description，缺另外两个占位符")
+            render_prompt(
+                GENERATION_USER_TEMPLATE,
+                description="只给了 description，缺另外两个占位符")
 
     def test_entailment_and_extraction_templates_render(self) -> None:
         assert "[C1]" in render_prompt(
@@ -109,7 +111,9 @@ class TestPromptTemplates:
 
 class TestQueryExtraction:
     def test_valid(self) -> None:
-        q = QueryExtraction("村集体经济组织", ("公厕新建",), ("设备购置",), ("建厕所 → 农村人居环境整治",))
+        q = QueryExtraction(
+            "村集体经济组织", ("公厕新建",), ("设备购置",),
+            ("建厕所 → 农村人居环境整治",))
         assert q.validate() is q
 
     def test_bad_subject_type(self) -> None:
@@ -248,7 +252,8 @@ class TestParsing:
         assert q.subject_type == "强村公司" and q.use_items == ("园区管网建设",)
 
     def test_parse_extraction_strips_fences(self) -> None:
-        raw = "```json\n{\"subject_type\": \"其他\", \"construction_items\": [\"建公厕\"], \"use_items\": [], \"terms\": []}\n```"
+        raw = ("```json\n{\"subject_type\": \"其他\", \"construction_items\": [\"建公厕\"],"
+               " \"use_items\": [], \"terms\": []}\n```")
         assert parse_extraction(raw).construction_items == ("建公厕",)
 
     def test_parse_extraction_bad_json_raises(self) -> None:
@@ -257,7 +262,8 @@ class TestParsing:
 
     def test_parse_entailments_roundtrip(self) -> None:
         raw = json.dumps([
-            {"citation": "[C1]", "verdict": "不蕴含", "reason": "描述为建设内容，与该条款禁止的用途无关"},
+            {"citation": "[C1]", "verdict": "不蕴含",
+             "reason": "描述为建设内容，与该条款禁止的用途无关"},
             {"citation": "[C2]", "verdict": "不确定", "reason": "描述未说明资金去向"},
         ], ensure_ascii=False)
         verdicts = parse_entailments(raw, ALLOWED)

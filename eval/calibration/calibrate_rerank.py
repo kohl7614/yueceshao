@@ -27,14 +27,17 @@
 ------
 A/B/C 三组各一个纯文本文件（每行一条查询，``#`` 开头为注释），与本脚本同目录：
 
-- ``queries-B组.txt`` 已入仓（标定文档 §5 全文列出的 10 条）。
-- ``queries-A组.txt`` / ``queries-C组.txt`` **待原作者补充**（标定文档未全文列出）；
-  缺失时脚本会告警并跳过该组，此时算不出完整的 τ 建议区间。
+- ``queries-A组.txt``（20 条）／ ``queries-B组.txt``（10 条）／ ``queries-C组.txt``（10 条）
+  三组齐备，可直接复现标定文档 §3 的分布与 τ 扫表。任一组缺失时脚本告警并跳过，
+  此时算不出完整的 τ 建议区间。
 
 三组含义（与标定文档 §2 一致）：
 
 - A：域内、且语料确实覆盖（20 条）——「误拦」的计数来源：A 组判未覆盖 = 误拦。
-- B：近域、预期语料未覆盖（10 条）——「漏放」的计数来源之一。
+- B：近域（10 条）——「漏放」的计数来源之一。**注意这组标注偏宽**：10 条被放行的
+  8 条里，7 条语料确实覆盖、1 条仅「部分相关」（宅基地使用权纠纷，命中的条款答不了
+  这个问题），见标定文档 §5／§6。这 7 条被放行属于正确判断而非漏放，
+  详见 ``README.md`` 的「解读漏放率前必读」。
 - C：完全域外（10 条）——「漏放」的计数来源之一：C 组判有依据 = 漏放。
 """
 
@@ -54,8 +57,8 @@ logger = logging.getLogger("calibrate_rerank")
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from rag.retriever import build_retriever  # noqa: E402
 from rag.rerank import build_reranker  # noqa: E402
+from rag.retriever import build_retriever  # noqa: E402
 
 # A/B/C 三组的查询文件（与本脚本同目录）
 GROUP_FILES = {
@@ -71,7 +74,7 @@ TAU_SWEEP = [round(0.500 + 0.025 * i, 3) for i in range(9)]  # 0.500 .. 0.700
 def load_queries(group_file: Path, group: str) -> list[str]:
     """读一组查询（每行一条，去空行与 ``#`` 注释）。
 
-    文件缺失时告警并返回空列表——缺失的那组通常是 A/C（待原作者补充）。
+    文件缺失时告警并返回空列表，该组不参与统计——缺 A 组算不出上沿、缺 C 组算不出下沿。
     """
     if not group_file.is_file():
         logger.warning(
@@ -100,7 +103,7 @@ def score_one_query(retriever, reranker, query: str, top_k: int) -> float:
 
 def _fmt_table(rows: list[list[str]]) -> str:
     """把二维列表排成对齐的纯文本表。"""
-    widths = [max(len(str(cell)) for cell in col) for col in zip(*rows)]
+    widths = [max(len(str(cell)) for cell in col) for col in zip(*rows, strict=False)]
     lines = []
     for row in rows:
         lines.append(
@@ -205,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     if "A" not in group_min or "C" not in group_max:
         print(
             "A/C 组查询快照缺失，无法给出完整区间（平台下沿需要 C 组 max、上沿需要 A 组 min）。\n"
-            "当前只统计了已入仓的 B 组；A/C 组快照待原作者补充后重跑即可。"
+            "请确认 queries-A组.txt / queries-C组.txt 与本脚本同目录（或用 --queries-dir 指过去）。"
         )
     elif group_min["A"] > group_max["C"]:
         lower = group_max["C"]

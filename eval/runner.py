@@ -24,14 +24,15 @@ import csv
 import json
 import logging
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from eval.config import SWITCH_DOCS, SWITCH_NAMES, AblationSwitches
 from eval.dataset import EvalCase, RegistryError, load_cases, take
-from eval.gating import SwitchTrace, ablation_context
+from eval.gating import ablation_context
 from eval.metrics import (
     CaseOutcome,
     EvalThresholds,
@@ -190,13 +191,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--limit", type=int, default=None, help="只跑前 N 条（smoke 用）")
     parser.add_argument("--out", default="runs/latest", help="输出目录，默认 runs/latest")
-    parser.add_argument("--registry", default=None, help="文号注册表导出 JSON；不给则引用错误率记 N/A")
+    parser.add_argument(
+        "--registry", default=None,
+        help="文号注册表导出 JSON；不给则引用错误率记 N/A")
     parser.add_argument(
         "--ablate",
         action="append",
         default=[],
         metavar="SWITCH",
         help=f"额外跑一个消融组（移除该模块），可重复；可选：{', '.join(SWITCH_NAMES)}",
+    )
+    parser.add_argument(
+        "--pipeline",
+        choices=("null", "rules"),
+        default="null",
+        help="被测管线：null=占位（链路验证）；rules=规则引擎基线"
+             "（需根目录 config.json 指向数据仓）",
     )
     parser.add_argument(
         "--ablate-all",
@@ -206,12 +216,29 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--match-threshold", type=float, default=0.85, help="匹配率验收线，默认 0.85"
     )
-    parser.add_argument("--recall-threshold", type=float, default=0.80, help="召回验收线，默认 0.80")
+    parser.add_argument(
+        "--recall-threshold", type=float, default=0.80, help="召回验收线，默认 0.80")
     parser.add_argument(
         "--citation-error-threshold", type=float, default=0.05, help="引用错误率上限，默认 0.05"
     )
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING"])
     return parser
+
+
+def _build_pipeline(name: str) -> Pipeline:
+    """按名构建被测管线；rules 需要根目录 config.json（数据仓路径）。"""
+    if name == "null":
+        return NullPipeline()
+    if name == "rules":
+        from eval.rules_pipeline import RulesPipeline  # 局部 import：避免 null 路径强依赖 rules
+
+        try:
+            return RulesPipeline()
+        except FileNotFoundError as exc:
+            raise SystemExit(
+                f"--pipeline rules 需要根目录 config.json 且数据仓可访问：{exc}"
+            ) from exc
+    raise ValueError(f"未知管线：{name}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -237,9 +264,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         recall=args.recall_threshold,
         citation_error_rate=args.citation_error_threshold,
     )
-    pipeline: Pipeline = NullPipeline()
+    pipeline = _build_pipeline(args.pipeline)
 
-    groups: list[GroupResult] = [run_group(cases, AblationSwitches.default(), pipeline, thresholds, registry)]
+    groups: list[GroupResult] = [
+        run_group(cases, AblationSwitches.default(), pipeline, thresholds, registry)]
     ablate_targets: list[str] = []
     if args.ablate_all:
         ablate_targets = list(SWITCH_NAMES)
@@ -279,7 +307,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"cases    : {primary.summary.case_count} 条（limit={args.limit}）",
                 f"匹配率   : {_fmt(primary.summary.match_rate)}  线 {thresholds.match_rate:.0%}",
                 f"召回率   : {_fmt(primary.summary.recall)}  线 {thresholds.recall:.0%}",
-                f"引用错误 : {_fmt(primary.summary.citation_error_rate)}  上限 {thresholds.citation_error_rate:.0%}",
+                f"引用错误 : {_fmt(primary.summary.citation_error_rate)}"
+                f"  上限 {thresholds.citation_error_rate:.0%}",
                 f"姿态违规 : {primary.summary.forbidden_violations} 处",
                 f"输出目录 : {out_dir.resolve()}",
             ]

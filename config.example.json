@@ -50,9 +50,10 @@
     "max_attempts": 2
   },
   "generation": {
+    "_说明": "生成 LLM（extract/entail_review/generate 三段共用）。模型默认 qwen-max：真 LLM 方向验证实测 qwen-plus 会反复在蕴含复核 reason 里写「违规」被姿态校验拒收，qwen-max 的指令遵循度显著更稳；temperature 恒 0（评测纪律）。",
     "provider": "qwen",
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "model": "qwen-plus",
+    "model": "qwen-max",
     "temperature": 0,
     "api_key_env": "DASHSCOPE_API_KEY"
   }

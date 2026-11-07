@@ -1,7 +1,8 @@
 """rules/engine.py — 确定性负面清单匹配引擎（自建禁止用途词典词表共现匹配，无 LLM、无分词依赖）。
 
 职责：
-- 输入项目描述（申报场景文本），输出命中列表：规则文号/条款号（带层级/效力标注）/条款原文/命中词/等价组对照；
+- 输入项目描述（申报场景文本），输出命中列表：规则文号/条款号（带层级/效力标注）
+  /条款原文/命中词/等价组对照；
 - 匹配口径：描述侧术语与条款侧术语（词典词表子串匹配，输出确定性）落在同一概念组
   即命中，可解释（输出两侧命中词与概念组）；
 - 匹配范围：现行规则集（剔除已失效）中再剔除「结构标注」组（总括句等结构噪音）；
@@ -15,12 +16,15 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Mapping, Sequence
 
 from rules.lexicon import FORBIDDEN_USE_CONCEPTS
 from rules.schema import (
-    GROUP_TYPE_STRUCTURE, RuleRecord, RuleStore, display_priority_key,
+    GROUP_TYPE_STRUCTURE,
+    RuleRecord,
+    RuleStore,
+    display_priority_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,7 +63,8 @@ class NegRuleMatcher:
     ) -> None:
         """构建匹配器：预计算现行规则（剔除已失效与结构标注组）的概念组。"""
         self.store = store
-        self._ordered_terms: tuple[str, ...] = tuple(t for terms in concepts.values() for t in terms)
+        self._ordered_terms: tuple[str, ...] = tuple(
+            t for terms in concepts.values() for t in terms)
         self._term_concept: dict[str, str] = {t: c for c, terms in concepts.items() for t in terms}
         self._rule_concepts: list[tuple[RuleRecord, frozenset[str]]] = [
             (rule, self._concepts_in(rule.clause_text))
@@ -93,7 +98,8 @@ class NegRuleMatcher:
             if not shared:
                 continue
             rule_terms = tuple(
-                t for t in self._ordered_terms if self._term_concept[t] in shared and t in rule.clause_text
+                t for t in self._ordered_terms
+                if self._term_concept[t] in shared and t in rule.clause_text
             )
             desc_hits = tuple(t for t in desc_terms if self._term_concept[t] in shared)
             hits.append(
