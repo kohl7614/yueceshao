@@ -1,0 +1,8 @@
+﻿group,disabled_switches,case_count,match_rate,recall,citation_error_rate,forbidden_violations,all_pass
+full,,142,0.5352,0.1538,,0,0
+w/o:temporal_filter,temporal_filter,142,0.5352,0.1538,,0,0
+w/o:negative_hard_constraint,negative_hard_constraint,142,0.5352,0.1538,,0,0
+w/o:rerank,rerank,142,0.5352,0.1538,,0,0
+w/o:hybrid_retrieval,hybrid_retrieval,142,0.5352,0.1538,,0,0
+w/o:query_decomposition,query_decomposition,142,0.5352,0.1538,,0,0
+w/o:citation_validator,citation_validator,142,0.5352,0.1538,,0,0

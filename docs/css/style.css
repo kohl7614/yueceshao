@@ -911,6 +911,180 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
   padding-left: 12px;
 }
 
+/* ---------- 系统评测：三指标与消融对比 ---------- */
+
+.eval { padding: 46px 0 10px; }
+
+/* 三指标卡片 */
+.eval-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(252px, 1fr));
+  gap: 16px;
+}
+
+.eval-metric {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--seal);
+  border-radius: var(--radius);
+  padding: 16px 18px 14px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eval-metric-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.eval-metric-name { font-family: var(--font-display); font-size: 18px; font-weight: 700; }
+
+.eval-line {
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 2px 11px;
+  white-space: nowrap;
+}
+.eval-line-ok { background: var(--bamboo-tint); color: var(--bamboo); }
+.eval-line-cap { background: var(--amber-tint); color: var(--amber); }
+
+.eval-metric-desc { margin: 0; font-size: 14px; color: var(--ink-soft); line-height: 1.7; }
+
+.eval-metric-value {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+/* N/A 徽标：诚实标注"不可计算"，不用 0 或 1 冒充 */
+.badge-na {
+  background: var(--ash-tint);
+  color: var(--ash);
+  border: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 完整系统（基线）vs 消融组矩阵 */
+.eval-matrix {
+  margin-top: 18px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-card);
+}
+
+.eval-matrix-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.eval-matrix-title { margin: 0; font-family: var(--font-display); font-size: 18px; font-weight: 700; }
+
+.eval-matrix-sub { margin: 8px 0 14px; font-size: 13.5px; color: var(--ink-faint); line-height: 1.7; }
+
+.eval-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+.eval-table-wrap:focus-visible { outline: 3px solid rgba(162, 51, 39, .3); outline-offset: 2px; }
+
+.eval-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.eval-table th,
+.eval-table td {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.eval-table thead th {
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.eval-table tbody th {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 12.5px;
+  padding-top: 12px;
+}
+.eval-table tbody td { color: var(--ink-soft); }
+.eval-table tbody tr:last-child th,
+.eval-table tbody tr:last-child td { border-bottom: none; }
+.eval-table tbody tr:hover { background: #fdfaf1; }
+
+.eval-table .eval-row-full { background: #fdfaf1; }
+.eval-table .eval-row-full:hover { background: #fdfaf1; }
+.eval-table .eval-row-full th { color: var(--seal-deep); }
+
+.eval-th-line { color: var(--ink-soft); font-weight: 500; font-size: 11.5px; }
+.eval-table .badge-na { font-size: 12px; padding: 1px 8px; }
+
+.eval-matrix-note { margin: 12px 0 0; font-size: 13px; color: var(--ink-faint); line-height: 1.7; }
+.eval-matrix-note strong { color: var(--ink-soft); }
+
+/* 复算方式折叠 */
+.eval-details {
+  margin-top: 16px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  background: #fdfaf1;
+  padding: 12px 16px;
+}
+.eval-summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.eval-summary::-webkit-details-marker { display: none; }
+.eval-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--seal);
+  transition: transform .15s ease;
+}
+.eval-details[open] .eval-summary::before { transform: rotate(90deg); }
+.eval-summary:hover { color: var(--seal); }
+
+.eval-details-body { margin-top: 10px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.7; }
+.eval-details-body p { margin: 0; }
+.eval-details-body ul { margin: 10px 0 0; padding-left: 20px; }
+.eval-details-body li { margin-bottom: 7px; }
+.eval-details-body li:last-child { margin-bottom: 0; }
+
+.eval-cmd {
+  display: block;
+  margin: 10px 0 0;
+  padding: 10px 13px;
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 13px;
+  color: var(--ink);
+}
+
 /* 数据来源说明折叠 */
 .notes-summary {
   cursor: pointer;
@@ -991,6 +1165,41 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
   /* 标签条移动端横向滑动 */
   .report-tabs { flex-wrap: nowrap; overflow-x: auto; margin-top: 12px; }
   .report-tab { flex-shrink: 0; white-space: nowrap; }
+  /* 评测区块：单列卡片 + 矩阵改堆叠卡片（窄屏放不下六列，避免横向滚动） */
+  .eval { padding: 28px 0 8px; }
+  .eval-grid { grid-template-columns: 1fr; }
+  .eval-matrix { padding: 14px; }
+  .eval-table-wrap { overflow: visible; border: none; border-radius: 0; }
+  .eval-table { min-width: 0; }
+  .eval-table thead { display: none; }
+  .eval-table tbody tr {
+    display: block;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    background: #fffdf6;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+  }
+  .eval-table tbody tr:last-child { margin-bottom: 0; }
+  .eval-table tbody tr:hover { background: #fffdf6; }
+  .eval-table tbody th,
+  .eval-table tbody td {
+    display: block;
+    border-bottom: none;
+    padding: 3px 0;
+    white-space: normal;
+  }
+  .eval-table tbody td::before {
+    content: attr(data-label) "：";
+    display: inline-block;
+    margin-right: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-faint);
+  }
+  .eval-table .eval-row-full { border-color: var(--seal); background: #fdfaf1; }
+  .eval-table .eval-row-full:hover { background: #fdfaf1; }
+  .eval-cmd { font-size: 12px; }
   /* 免责声明压成紧凑两行，保证首屏能看到「开始体检」主按钮 */
   .disclaimer-inner { padding: 5px 14px; }
   .disclaimer-inner p { font-size: 12px; line-height: 1.5; }
@@ -1013,4 +1222,5 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
   .disclaimer-bar, .site-header, .hero, .presets, .data-notes, .notice { display: none !important; }
   .report-tabs { display: none !important; }
   .report-sec[hidden] { display: block !important; }
+  .eval-table-wrap { overflow: visible; }
 }

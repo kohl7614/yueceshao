@@ -317,7 +317,7 @@ class QwenLLM:
         """
         section = (config or {}).get("generation")
         settings: Mapping[str, Any] = section if isinstance(section, Mapping) else {}
-        self.model = str(settings.get("model") or "qwen-plus")
+        self.model = str(settings.get("model") or "qwen-max")
         self.base_url = str(
             settings.get("base_url") or "https://dashscope.aliyuncs.com/compatible-mode/v1")
         self.api_key_env = str(settings.get("api_key_env") or "DASHSCOPE_API_KEY")
