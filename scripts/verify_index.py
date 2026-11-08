@@ -4,7 +4,8 @@
 ----
 索引 zip 解压后，先回答三个问题再谈接入：
 
-1. **块数对不对**——collection ``yueceshao_clauses`` 的 count 是否等于随包说明的 18262；
+1. **块数对不对**——collection ``yueceshao_clauses`` 的 count 是否等于当前基线 20099
+   （#27 分块器修正后、语料快照 ``9b05544`` 的切块结果）；
 2. **元数据全不全**——随机抽 10 块，检查引用渲染必备字段（doc_no / clause / validity /
    is_current）是否齐全；
 3. **审计公告漏没漏**——用 ``rag.loader`` 的过滤口径（category == 审计公告即剔除）
@@ -20,7 +21,7 @@ Chroma 在 ``persist_dir`` 指错时会**自动建一个空集合且不报错**�
 用法::
 
     python -m scripts.verify_index --config config.json
-    python -m scripts.verify_index --config config.json --expected-count 18262 --sample 10
+    python -m scripts.verify_index --config config.json --expected-count 20099 --sample 10
 
 退出码：0=通过；1=不通过（块数不符／抽检缺字段／审计公告泄漏）。
 """
@@ -42,8 +43,13 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config.json"
-DEFAULT_EXPECTED_COUNT = 18262
-"""kelier1 随包说明的块数（2026-11-02 索引，Qwen3-Embedding-0.6B，1024 维）。"""
+DEFAULT_EXPECTED_COUNT = 20099
+"""当前基线块数。
+
+2026-11-07 用 main（``f7f7032``）的 loader + chunker、语料 ``9b05544`` 重建：
+733 登记 − 14 审计公告 = 719 篇，切出 20099 块、覆盖 718 篇（序号 438 文件名含 ``|``，
+Windows 落不了地）。旧值 18262 是 #27 分块器修正前的产物，仅作历史对照。
+"""
 
 REQUIRED_METADATA: tuple[str, ...] = ("doc_no", "clause", "validity", "is_current")
 """抽检必备字段。
@@ -53,7 +59,7 @@ REQUIRED_METADATA: tuple[str, ...] = ("doc_no", "clause", "validity", "is_curren
 """
 
 PAGE_SIZE = 5000
-"""分页读取块元数据的批大小（18262 块约 4 页）。"""
+"""分页读取块元数据的批大小（20099 块约 5 页）。"""
 
 SAMPLE_SEED = 20261106
 """抽检偏移的固定种子（可复现；与索引内容无关）。"""
