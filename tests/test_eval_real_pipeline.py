@@ -6,6 +6,7 @@ CI 可跑。红线：夹具用〔2099〕人造文号。
 
 from __future__ import annotations
 
+import app.real_components as rc
 from app.pipeline import PipelineResult
 
 from eval.dataset import EvalCase
@@ -81,3 +82,24 @@ class TestRealPipeline:
         pred = pipeline.predict(EvalCase(case_id="C2", query="描述"))
         assert pred.verdict == "miss"
         assert pred.refs == ()
+
+
+class TestRealCheckupPipelineNoneConfig:
+    def test_none_config_falls_back_to_default(self, monkeypatch) -> None:
+        """eval --pipeline real 首跑发现：RealPipeline 传 config_path=None 显式覆盖了
+        RealCheckupPipeline 签名默认值 → RealComponents(Path(None)) 崩。
+        修复后 None 应回落到 DEFAULT_CONFIG_PATH，再传给 RealComponents。"""
+        captured: dict[str, object] = {}
+
+        class _FakeComponents:
+            pass
+
+        def _fake_real_components(config_path, *, llm=None):
+            captured["config_path"] = config_path
+            return _FakeComponents()
+
+        monkeypatch.setattr(rc, "RealComponents", _fake_real_components)
+        monkeypatch.setattr(rc, "DEFAULT_CONFIG_PATH", "/fake/config.json")
+
+        rc.RealCheckupPipeline(None)
+        assert captured["config_path"] == "/fake/config.json"

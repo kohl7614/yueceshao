@@ -792,12 +792,16 @@ class RealCheckupPipeline:
 
     def __init__(
         self,
-        config_path: Path | str = DEFAULT_CONFIG_PATH,
+        config_path: Path | str | None = DEFAULT_CONFIG_PATH,
         *,
         llm: MockLLM | QwenLLM | None = None,
         components: RealComponents | None = None,
     ) -> None:
         """装配管线；``components`` 可注入（测试用）。"""
+        # RealPipeline 默认 config_path=None，回落仓库根默认 config.json——
+        # 显式 None 会覆盖本方法签名默认值，导致 Path(None) 崩（eval --pipeline real 首跑发现）。
+        if config_path is None:
+            config_path = DEFAULT_CONFIG_PATH
         self.components = components or RealComponents(config_path, llm=llm)
 
     @property
