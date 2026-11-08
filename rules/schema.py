@@ -18,14 +18,19 @@ logger = logging.getLogger(__name__)
 
 # ---- 效力状态常量（取值与数据仓字段「所在文件效力状态」一致）----
 EFFECT_VALID = "有效"           # 现行有效
+# 审计时点有效（回溯评测）：文件已失效、但审计案例发生在其有效期内，评测按「审计时点」回溯允许命中
+# （见 docs/评测口径.md 方案 B）。
+EFFECT_AUDIT_TIME = "审计时点有效"
 EFFECT_PENDING = "待人工核验"    # 效力待核验，按保留处理
 EFFECT_INVALIDATED = "已失效"    # 已失效，从现行规则集剔除
 
 # ---- 展示优先级：层级更具体优先（县 > 市 > 省 > 国家），与开发手册 §3.2 口径一致 ----
 LEVEL_RANK: dict[str, int] = {"县": 4, "县（含乡镇）": 4, "市": 3, "省": 2, "国家": 1}
 
-# 效力状态 → 展示排序权重（现行有效优先）
-_EFFECT_RANK: dict[str, int] = {EFFECT_VALID: 2, EFFECT_PENDING: 1, EFFECT_INVALIDATED: 0}
+# 效力状态 → 展示排序权重（现行有效优先；审计时点有效次之，用于回溯评测）
+_EFFECT_RANK: dict[str, int] = {
+    EFFECT_VALID: 3, EFFECT_AUDIT_TIME: 2, EFFECT_PENDING: 1, EFFECT_INVALIDATED: 0,
+}
 
 # 未分组标记（等价组建议.组号 为「未分组」时的归一值）
 GROUP_NONE = "未分组"
@@ -60,8 +65,13 @@ class RuleRecord:
 
     @property
     def is_effective(self) -> bool:
-        """是否现行有效（效力状态=有效）。"""
-        return self.effect_status == EFFECT_VALID
+        """是否可作为命中依据：现行有效（有效）或审计时点有效（回溯评测）。
+
+        回溯口径（docs/评测口径.md 方案 B）：审计案例描述的是历史违规，其期望条款
+        可能指向当时有效、现已失效的文件（如粤财农〔2020〕106号）；评测按「审计时点」
+        回溯，允许命中「审计时点有效」条款，否则召回被时效过滤压成 0。
+        """
+        return self.effect_status in (EFFECT_VALID, EFFECT_AUDIT_TIME)
 
     @property
     def is_invalidated(self) -> bool:

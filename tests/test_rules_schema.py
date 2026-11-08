@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from rules.loader import load_config, load_records, load_store_from_config, records_from_dicts
-from rules.schema import EFFECT_VALID, GROUP_NONE, RuleRecord, RuleStore
+from rules.schema import EFFECT_AUDIT_TIME, EFFECT_VALID, GROUP_NONE, RuleRecord, RuleStore
 
 FIXTURE = Path(__file__).parent / "fixtures" / "rules_sample.json"
 
@@ -46,6 +46,36 @@ def test_active_filter_removes_invalidated(store: RuleStore) -> None:
     assert len(active) == len(store.records) - len(invalidated)
     assert len(store.valid_records()) == sum(1 for r in store.records if r.is_effective)
     assert {r.effect_status for r in active} == {EFFECT_VALID, "待人工核验"}
+
+
+def test_audit_time_effective_counts_as_hittable() -> None:
+    """回溯口径（方案 B）：审计时点有效的条款（如已失效的 106号）应可作为命中依据。
+
+    审计案例描述历史违规、期望条款指向当时有效现已失效的文件；评测按审计时点
+    回溯，允许命中「审计时点有效」条款，否则召回被时效过滤压成 0。
+    """
+    base = {
+        "条款原文逐字": "涉农资金不得用于楼堂馆所",
+        "出处文号+条款号": "〔测试样例〕省A-009号 第四条",
+        "条款号": "四",
+        "承接列举": False,
+        "层级": "省",
+        "所在文件效力状态": EFFECT_AUDIT_TIME,
+        "负面清单载体文件": True,
+        "等价组建议": {"组号": "测试组-A", "组名": "", "组类型": ""},
+        "溯源_文件序号": 9,
+        "溯源_文号": "〔测试样例〕省A-009号",
+        "溯源_标题": "测试文件",
+        "溯源_发布机关": "测试机关",
+        "溯源_发布日期": "2020-01-01",
+        "溯源_类别": "资金管理办法",
+        "组裁定": "待人工",
+    }
+    record = records_from_dicts([base])[0]
+    assert record.effect_status == EFFECT_AUDIT_TIME
+    assert record.is_effective is True          # 回溯口径：可作命中依据
+    assert record.is_invalidated is False       # 不是「已失效」
+    assert record in RuleStore([record]).valid_records()
 
 
 def test_group_members_ordered_by_display_priority(store: RuleStore) -> None:
