@@ -122,3 +122,33 @@ def test_render_empty_result() -> None:
     assert render_hits(
         MatchResult(hits=(), description_terms=())
     ) == ["未识别到禁止用途词，暂无命中提示。"]
+
+
+# ---------------------------------------------------------------------------
+# 泛词分级（2026-11-08 实跑后新增）：泛词需资金用途语境才触发命中
+# ---------------------------------------------------------------------------
+
+def test_generic_term_alone_does_not_arm(matcher: NegRuleMatcher) -> None:
+    """泛词单独出现不触发命中：「车辆停放在镇政府院内」是合规叙述，不是禁止用途。
+
+    实测反例（真实标注表 C03）：描述提到车辆 → 旧口径命中 34 条条款，
+    引用惠市工信/开府办/汕工信等与案例无关的文号。
+    """
+    result = matcher.match("现有作业车辆12台，车辆停放在镇政府院内，日常仅做保养")
+    assert result.hits == ()
+    # 识别到 ≠ 命中：术语仍如实返回，口径透明
+    assert "车辆" in result.description_terms
+
+
+def test_generic_term_with_violation_frame_arms(matcher: NegRuleMatcher) -> None:
+    """泛词 + 违规语境（购置/发放等）仍应命中——收紧精度不能丢真命中。"""
+    result = matcher.match("拟申请资金购置车辆用于项目通勤")
+    assert result.hits
+    assert "车辆" in result.hits[0].matched_description_terms
+
+
+def test_specific_term_still_arms_alone(matcher: NegRuleMatcher) -> None:
+    """强词（禁止用途本体词）不需要语境词，单独出现即命中。"""
+    result = matcher.match("该项目建设被指为形象工程")
+    assert result.hits
+    assert "形象工程" in result.hits[0].matched_description_terms

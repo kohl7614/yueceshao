@@ -19,7 +19,12 @@ import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from rules.lexicon import FORBIDDEN_USE_CONCEPTS
+from rules.lexicon import (
+    FORBIDDEN_USE_CONCEPTS,
+    GENERIC_FRAME_WINDOW,
+    GENERIC_TERMS,
+    VIOLATION_FRAME_TERMS,
+)
 from rules.schema import (
     GROUP_TYPE_STRUCTURE,
     RuleRecord,
@@ -84,14 +89,37 @@ class NegRuleMatcher:
         """文本中出现的术语所属概念组集合。"""
         return frozenset(self._term_concept[term] for term in self._terms_in(text))
 
+    def _term_armed(self, description: str, term: str) -> bool:
+        """该术语在描述里是否构成"资金用途"信号（泛词需语境词共现）。
+
+        强词（违规形态词）出现即算信号；泛词（中性名词）必须在其左右
+        ``GENERIC_FRAME_WINDOW`` 字窗口内出现违规语境词（用于/购置/发放…），
+        否则只是叙述到该名词（如「车辆停放在镇政府院内」），不触发命中。
+        """
+        if term not in GENERIC_TERMS:
+            return True
+        start = description.find(term)
+        while start != -1:
+            window = description[
+                max(0, start - GENERIC_FRAME_WINDOW): start + len(term) + GENERIC_FRAME_WINDOW]
+            if any(frame in window for frame in VIOLATION_FRAME_TERMS):
+                return True
+            start = description.find(term, start + 1)
+        return False
+
     def match(self, description: str) -> MatchResult:
         """匹配项目描述：与描述术语同概念组的规则即命中，按展示优先级排序。"""
         if not description:
             return MatchResult(hits=(), description_terms=())
         desc_terms = self._terms_in(description)
-        desc_concepts = frozenset(self._term_concept[t] for t in desc_terms)
+        # 参与匹配的概念组只由"已 armed"的术语决定；description_terms 仍返回全部
+        # 识别到的术语（口径透明：识别到 ≠ 命中）。
+        armed_terms = tuple(t for t in desc_terms if self._term_armed(description, t))
+        desc_concepts = frozenset(self._term_concept[t] for t in armed_terms)
         if not desc_concepts:
-            return MatchResult(hits=(), description_terms=())
+            if desc_terms:
+                logger.debug("描述术语 %s 均为泛词且无违规语境，不触发命中", desc_terms)
+            return MatchResult(hits=(), description_terms=desc_terms)
         hits: list[RuleHit] = []
         for rule, rule_concepts in self._rule_concepts:
             shared = rule_concepts & desc_concepts
@@ -101,7 +129,7 @@ class NegRuleMatcher:
                 t for t in self._ordered_terms
                 if self._term_concept[t] in shared and t in rule.clause_text
             )
-            desc_hits = tuple(t for t in desc_terms if self._term_concept[t] in shared)
+            desc_hits = tuple(t for t in armed_terms if self._term_concept[t] in shared)
             hits.append(
                 RuleHit(
                     rule=rule,
