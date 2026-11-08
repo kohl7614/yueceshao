@@ -32,9 +32,6 @@ from eval.metrics import CaseOutcome, EvalThresholds, summarize
 
 __all__ = ["main"]
 
-#: 引用错误率的分母为 0 或未提供 registry 时，该指标不可计算 → N/A。
-_REGISTRY_NOT_PROVIDED_SENTINEL = "__merge_registry_absent__"
-
 
 def _split(value: str) -> tuple[str, ...]:
     """CSV 里的 ``;`` 分隔列 → 元组（空串 → 空元组）。"""
@@ -155,12 +152,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     registry_provided = True
     try:
         for directory in args.inputs:
-            part = _read_group_details(Path(directory))
-            # 任一输入目录缺「组×逐案例」字段即视为无法核验引用（保守）。
+            dir_path = Path(directory)
+            part = _read_group_details(dir_path)
             rows.extend(part)
-            if not any("citations_total" in r for r in part):
-                registry_provided = False
-    except FileNotFoundError as exc:
+            # 引用错误率能否计算，取决于各分片是否带了 registry。读各片 metrics.json
+            # 的 registry_provided 字段（runner 写出的权威来源），而非猜 CSV 列——
+            # to_row 恒含 citations_total，猜列存在会恒 True、把「漏传 registry」误报成
+            # 0% 引用错误率（#70 终审发现）。
+            metrics_path = dir_path / "metrics.json"
+            if metrics_path.is_file():
+                meta = json.loads(metrics_path.read_text(encoding="utf-8"))
+                if not meta.get("registry_provided", False):
+                    registry_provided = False
+            else:
+                registry_provided = False  # 无法确认 → 保守记 N/A
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
         print(f"合并失败：{exc}", file=sys.stderr)
         return 2
 

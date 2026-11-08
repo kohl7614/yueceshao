@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 from eval.merge import main as merge_main
+from eval.metrics import CaseOutcome
 from eval.runner import main as runner_main
 
 
@@ -66,3 +67,27 @@ def test_merge_missing_group_details_fails(tmp_path: Path) -> None:
     empty = tmp_path / "empty"
     empty.mkdir()
     assert merge_main(["--inputs", str(empty), "--out", str(tmp_path / "out")]) == 2
+
+
+def test_merge_missing_registry_reports_na_not_zero(tmp_path: Path) -> None:
+    """分片漏传 --registry（metrics.json 标 registry_provided=False）时，
+    合并出的引用错误率必须是 N/A，而非拿 citations_bad=0 误报成 0%（#70 终审发现）。"""
+    directory = tmp_path / "r1"
+    directory.mkdir()
+    outcome = CaseOutcome(
+        case_id="C1", expected_verdict=None, predicted_verdict="miss",
+        verdict_match=None, expected_refs=(), predicted_refs=(), refs_hit=(),
+        recall_mode="n/a", citations_total=1, citations_bad=0, forbidden_hits=(),
+    )
+    row = {"group": "full", **outcome.to_row()}
+    with (directory / "group_details.csv").open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(row))
+        writer.writeheader()
+        writer.writerow(row)
+    (directory / "metrics.json").write_text(
+        json.dumps({"registry_provided": False}), encoding="utf-8")
+
+    final = tmp_path / "final"
+    merge_main(["--inputs", str(directory), "--out", str(final)])
+    merged = json.loads((final / "metrics.json").read_text(encoding="utf-8"))
+    assert merged["metrics"]["citation_error_rate"] is None  # N/A，而非 0
