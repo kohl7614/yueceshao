@@ -722,36 +722,73 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
 .ev-line { display: flex; gap: 8px; flex-wrap: wrap; }
 .ev-line .ev-k { color: var(--ink-faint); flex-shrink: 0; min-width: 64px; }
 .ev-line .ev-v { color: var(--ink); }
-.ev-quote {
-  color: var(--ink-soft);
-  font-family: var(--font-display);
-  background: #fff;
-  border-left: 3px solid var(--line);
-  padding: 7px 11px;
-  border-radius: 4px;
-  margin-top: 5px;
-  line-height: 1.7;
+
+/* 三步走并排对照：左＝材料原文命中句，右＝条款原文摘录，中点连线 */
+.hit-compare {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fffdf6;
+  overflow: hidden;
+}
+/* 规则／疑似两级来源在对照区的视觉区分：实线朱砂 vs 虚线琥珀 */
+.hit-item.is-rule .hit-compare { border-color: rgba(162, 51, 39, .38); }
+.hit-item.is-suspect .hit-compare { border-style: dashed; border-color: #d3b47c; }
+
+.hit-pane {
+  min-width: 0;
+  padding: 10px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.hit-pane-src { background: #fffdf6; }
+.hit-pane-clause { background: var(--paper); border-left: 1px dashed var(--line); }
+
+.hit-pane-head {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  color: var(--ink-faint);
+}
+.hit-pane-clause .hit-pane-head { color: var(--seal-deep); }
+
+.hit-quote { margin: 0; font-size: 14px; line-height: 1.8; }
+.hit-quote-src { color: var(--ink); }
+.hit-quote-clause { font-family: var(--font-display); color: var(--ink-soft); }
+
+/* 触发词高亮：两栏同款，读者沿同色即完成左右连线 */
+.hit-mark {
+  background: #ffe9a8;
+  color: var(--ink);
+  font-weight: 600;
+  padding: 0 3px;
+  border-radius: 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
-/* 命中依据折叠 */
-.ev-details { margin-top: 10px; }
-.ev-summary {
-  cursor: pointer;
-  list-style: none;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--ink-soft);
-}
-.ev-summary::-webkit-details-marker { display: none; }
-.ev-summary::before {
-  content: "▸";
-  display: inline-block;
-  margin-right: 6px;
+.hit-compare-link {
+  align-self: center;
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  border: 1px solid var(--seal);
+  border-radius: 999px;
+  background: var(--seal-tint);
   color: var(--seal);
-  transition: transform .15s ease;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  letter-spacing: .04em;
 }
-.ev-details[open] .ev-summary::before { transform: rotate(90deg); }
-.ev-summary:hover { color: var(--seal); }
+.hit-compare-link::before { content: "↔ "; font-size: 12px; }
+.hit-item.is-suspect .hit-compare-link { border-color: #cfa96b; color: var(--amber); background: var(--amber-tint); }
 
 .hit-note { margin: 8px 0 0; font-size: 13px; color: var(--ink-faint); }
 
@@ -1161,6 +1198,10 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
   .report-meta div { flex-direction: column; gap: 2px; }
   .report-meta dt { min-width: 0; }
   .hit-head { align-items: flex-start; flex-direction: column; gap: 6px; }
+  /* 并排对照改上下堆叠：左材料原文 → ↓对照 → 右条款原文 */
+  .hit-compare { grid-template-columns: 1fr; }
+  .hit-pane-clause { border-left: none; border-top: 1px dashed var(--line); }
+  .hit-compare-link::before { content: "↓ "; }
   .report-wrap, .notice, .presets { scroll-margin-top: 104px; }
   /* 标签条移动端横向滑动 */
   .report-tabs { flex-wrap: nowrap; overflow-x: auto; margin-top: 12px; }

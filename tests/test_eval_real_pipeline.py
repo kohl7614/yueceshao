@@ -6,10 +6,11 @@ CI 可跑。红线：夹具用〔2099〕人造文号。
 
 from __future__ import annotations
 
+import app.real_components as rc
 from app.pipeline import PipelineResult
 
 from eval.dataset import EvalCase
-from eval.real_pipeline import RealPipeline, _raw_clause
+from eval.real_pipeline import RealPipeline, _is_placeholder_doc_no, _raw_clause
 from gen.schema import CheckupReport, NegativeHit
 
 
@@ -20,11 +21,23 @@ class TestRawClause:
         assert _raw_clause("未分条（原文无条款号）") == "未分条（原文无条款号）"
 
 
-def _fake_pipeline(hit_type: str = "疑似命中（建议对照原文）"):
+class TestIsPlaceholderDocNo:
+    def test_placeholder_forms_detected(self) -> None:
+        assert _is_placeholder_doc_no("无（页面未载/仅正文引用，不计）")
+        assert _is_placeholder_doc_no("无（地方性法规）")
+        assert _is_placeholder_doc_no("页面未载")
+
+    def test_real_doc_no_not_placeholder(self) -> None:
+        assert not _is_placeholder_doc_no("粤测农〔2099〕1号")
+        assert not _is_placeholder_doc_no("国令第498号")
+        assert not _is_placeholder_doc_no("肇庆市人民政府令第15号")
+
+
+def _fake_pipeline(hit_type: str = "疑似命中（建议对照原文）", doc_no: str = "粤测农〔2099〕1号"):
     """构造假 RealCheckupPipeline：report 带一条②段命中，retrieve 返回 [C1] 映射。"""
     hits = (
         {"chunk_id": "[C1]", "text": "自造原文", "metadata": {
-            "doc_no": "粤测农〔2099〕1号", "clause_no": "第四条",
+            "doc_no": doc_no, "clause_no": "第四条",
             "validity": "有效", "is_current": True}},
     )
 
@@ -81,3 +94,33 @@ class TestRealPipeline:
         pred = pipeline.predict(EvalCase(case_id="C2", query="描述"))
         assert pred.verdict == "miss"
         assert pred.refs == ()
+
+    def test_placeholder_doc_no_skipped_in_refs(self) -> None:
+        """占位文号（无真实文号）不应作为引用输出，避免引用错误率虚高。"""
+        pipeline = object.__new__(RealPipeline)
+        pipeline._pipeline = _fake_pipeline(doc_no="无（页面未载/仅正文引用，不计）")
+        pred = pipeline.predict(EvalCase(case_id="C3", query="描述"))
+        assert pred.verdict == "hit"  # 命中判定由 negative_hits 有无决定，不受文号影响
+        assert pred.refs == ()  # 占位文号被跳过
+        assert pred.citations == ()
+
+
+class TestRealCheckupPipelineNoneConfig:
+    def test_none_config_falls_back_to_default(self, monkeypatch) -> None:
+        """eval --pipeline real 首跑发现：RealPipeline 传 config_path=None 显式覆盖了
+        RealCheckupPipeline 签名默认值 → RealComponents(Path(None)) 崩。
+        修复后 None 应回落到 DEFAULT_CONFIG_PATH，再传给 RealComponents。"""
+        captured: dict[str, object] = {}
+
+        class _FakeComponents:
+            pass
+
+        def _fake_real_components(config_path, *, llm=None):
+            captured["config_path"] = config_path
+            return _FakeComponents()
+
+        monkeypatch.setattr(rc, "RealComponents", _fake_real_components)
+        monkeypatch.setattr(rc, "DEFAULT_CONFIG_PATH", "/fake/config.json")
+
+        rc.RealCheckupPipeline(None)
+        assert captured["config_path"] == "/fake/config.json"

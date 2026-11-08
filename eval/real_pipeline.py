@@ -30,12 +30,28 @@ logger = logging.getLogger(__name__)
 # 「第四条」→「四」：meta_table 的 clause_no 带第/条前后缀，normalize_ref 需要裸序号
 _CLAUSE_NUM = re.compile(r"^第?\s*([0-9一二三四五六七八九十百零〇两]+)\s*条?$")
 
+# 占位文号：规则库采集时未拿到真实文号处，doc_no 是「无（…）」或「页面未载」。
+# 它们不是真实文号、无法在 registry 核验，不应作为引用输出——否则引用错误率被占位符虚高
+# （数据侧彻底版＝补全 440 条真实文号，见数据仓任务书）。
+_PLACEHOLDER_DOC_NO_PREFIX = "无（"
+_PLACEHOLDER_DOC_NO_MARKER = "页面未载"
+
 
 def _raw_clause(clause_no: str) -> str:
     """把「第四条」→「四」（去掉第/条前后缀，供 normalize_ref 归一到阿拉伯序号）。"""
     text = (clause_no or "").strip()
     match = _CLAUSE_NUM.match(text)
     return match.group(1) if match else text
+
+
+def _is_placeholder_doc_no(doc_no: str) -> bool:
+    """doc_no 是否为「文号缺失」占位符（非真实文号，不应作为引用输出）。
+
+    真实文号形如 ``粤财农〔2020〕106号``；占位符为 ``无（页面未载/仅正文引用，不计）``、
+    ``无（地方性法规）``、``页面未载`` 等。政府令/部令/国令（如 ``国令第498号``）是
+    真实文号，只是格式不同，**不**视为占位符。
+    """
+    return doc_no.startswith(_PLACEHOLDER_DOC_NO_PREFIX) or _PLACEHOLDER_DOC_NO_MARKER in doc_no
 
 
 class RealPipeline:
@@ -88,6 +104,9 @@ class RealPipeline:
         for hit in report.negative_hits:
             meta = table.get(hit.citation)
             if meta is None or not meta.doc_no:
+                continue
+            if _is_placeholder_doc_no(meta.doc_no):
+                # 文号缺失占位符不是可核验引用，跳过（不影响召回，只降引用错误率）
                 continue
             refs.setdefault(normalize_ref(meta.doc_no, _raw_clause(meta.clause_no)), None)
         return CasePrediction(

@@ -39,6 +39,40 @@
     return text.replace(/[\s\u3000，。；：、！？""''（）()《》【】\-—,.;:!?'"‘’]/g, "");
   }
 
+  /* 取 evidence 数组里指定 k 的 v（如「条款原文摘录」） */
+  function evidenceValue(hit, key) {
+    const line = (hit.evidence || []).find(function (l) { return l.k === key; });
+    return line ? line.v : "";
+  }
+
+  /* 关键词高亮：把 text 中出现的每个词包进 <mark>（纯 DOM 构建，不用 innerHTML）。
+     只高亮在 text 中真实出现的词，避免空挂；长词优先，防止短词截断长词。 */
+  function highlightText(text, words) {
+    const frag = document.createDocumentFragment();
+    const found = Array.from(new Set((words || []).filter(function (w) {
+      return w && text.indexOf(w) !== -1;
+    }))).sort(function (a, b) { return b.length - a.length; });
+    if (!found.length) {
+      frag.appendChild(document.createTextNode(text));
+      return frag;
+    }
+    const re = new RegExp(found.map(function (w) {
+      return w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }).join("|"), "g");
+    let last = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      const mark = el("mark", "hit-mark");
+      mark.textContent = m[0];
+      frag.appendChild(mark);
+      last = m.index + m[0].length;
+      if (m[0].length === 0) re.lastIndex += 1; // 防空匹配死循环
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    return frag;
+  }
+
   /* 数字滚动计数（尊重减少动效偏好，直接落在终值） */
   function animateCount(node, target) {
     if (REDUCED_MOTION || target <= 0) {
@@ -223,7 +257,9 @@
     s1.appendChild(policyList);
     doc.appendChild(s1);
 
-    /* 第②段 负面清单命中提示 */
+    /* 第②段 负面清单命中提示：三步走并排对照
+       ①命中级别与说明 → ②左栏材料原文命中句 → ③右栏条款原文摘录；
+       规则命中的触发词两栏同高亮（<mark>），疑似命中只并排、不高亮。 */
     const s2 = el("section", "report-sec");
     s2.id = "report-sec-2";
     const s2h = el("h3", null, "");
@@ -231,35 +267,55 @@
     s2h.appendChild(document.createTextNode("负面清单命中提示"));
     s2.appendChild(s2h);
     s2.appendChild(el("p", "sec-note",
-      "命中分两级：规则命中、疑似命中（建议对照原文）。每条附依据文号、条款号与日期；条款原文摘录自知识库清洗文本，逐字核对。"));
+      "命中分两级：规则命中、疑似命中（建议对照原文）。每条命中左侧为材料原文里命中的那一句、右侧为条款原文摘录，两栏并排便于对照；高亮词＝触发命中的关键词，仅规则命中标注——疑似命中为语义提示、无字眼级定位，不高亮。依据文号、条款号与日期逐条附于对照区下方，条款原文摘录自知识库清洗文本、逐字核对。"));
     const hitList = el("ol", "hit-list");
     report.s2.forEach(function (hit) {
-      const item = el("li", "hit-item" + (hit.level === "rule" ? " is-rule" : " is-suspect"));
+      const isRule = hit.level === "rule";
+      const item = el("li", "hit-item" + (isRule ? " is-rule" : " is-suspect"));
       const headRow = el("div", "hit-head");
-      headRow.appendChild(el("span", "badge " + (hit.level === "rule" ? "badge-rule" : "badge-suspect"),
-        hit.level === "rule" ? "规则命中" : "疑似命中，建议对照原文"));
+      headRow.appendChild(el("span", "badge " + (isRule ? "badge-rule" : "badge-suspect"),
+        isRule ? "规则命中" : "疑似命中，建议对照原文"));
       headRow.appendChild(el("span", "hit-title", hit.title));
       item.appendChild(headRow);
       item.appendChild(el("p", "hit-desc", hit.desc));
 
-      const evDetails = el("details", "ev-details");
-      const evSummary = el("summary", "ev-summary", "展开依据（文号 · 条款原文 · 来源）");
+      /* 并排对照区：左＝材料原文命中句（触发词高亮），右＝条款原文摘录（对应词高亮） */
+      const pairs = isRule && Array.isArray(hit.matchedWords) ? hit.matchedWords : [];
+      const compare = el("div", "hit-compare");
+      compare.setAttribute("aria-label", "材料原文与条款原文并排对照");
+
+      const srcPane = el("div", "hit-pane hit-pane-src");
+      srcPane.appendChild(el("p", "hit-pane-head", "材料原文 · 命中句"));
+      const srcQuote = el("blockquote", "hit-quote hit-quote-src");
+      srcQuote.appendChild(highlightText(hit.sourceQuote || "",
+        pairs.map(function (p) { return p.desc; })));
+      srcPane.appendChild(srcQuote);
+
+      const link = el("span", "hit-compare-link", "对照");
+
+      const clausePane = el("div", "hit-pane hit-pane-clause");
+      clausePane.appendChild(el("p", "hit-pane-head", "条款原文摘录"));
+      const clauseQuote = el("blockquote", "hit-quote hit-quote-clause");
+      clauseQuote.appendChild(highlightText(evidenceValue(hit, "条款原文摘录"),
+        pairs.map(function (p) { return p.clause; })));
+      clausePane.appendChild(clauseQuote);
+
+      compare.appendChild(srcPane);
+      compare.appendChild(link);
+      compare.appendChild(clausePane);
+      item.appendChild(compare);
+
+      /* 依据信息平铺展示（文号/条款号/日期/来源逐条强制标注）；条款原文已上移至右栏 */
       const ev = el("div", "hit-evidence");
       hit.evidence.forEach(function (line) {
         if (!line.v && !line.k) return;
+        if (line.k === "条款原文摘录") return; /* 已在右栏整句展示 */
         const row = el("div", "ev-line");
         row.appendChild(el("span", "ev-k", line.k));
-        if (line.k === "条款原文摘录" && line.v) {
-          const quote = el("p", "ev-quote", line.v);
-          ev.appendChild(quote);
-          return;
-        }
         row.appendChild(el("span", "ev-v", line.v || "——"));
         ev.appendChild(row);
       });
-      evDetails.appendChild(evSummary);
-      evDetails.appendChild(ev);
-      item.appendChild(evDetails);
+      item.appendChild(ev);
       if (hit.note) item.appendChild(el("p", "hit-note", "说明：" + hit.note));
       hitList.appendChild(item);
     });
