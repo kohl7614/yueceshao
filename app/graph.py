@@ -177,8 +177,13 @@ def build_checkup_graph(components: OrchestrationComponents) -> Any:
                 logger.warning("结构化抽取调用失败，降级为空抽取", exc_info=True)
                 break
         logger.warning("结构化抽取重试耗尽，①段检索降级为仅用原始描述")
+        # 降级抽取必须是**合法结构**（过 QueryExtraction.validate：subject_type 合法＋
+        # 至少一个条目），否则 parse_extraction 抛 SchemaError 反而打挂管线——与本节点
+        # 「不阻断管线」的目标相反（#76 终审抓到的阻断项）。
         empty_json = json.dumps(
-            {"subject_type": "", "construction_items": [], "use_items": [], "terms": []},
+            {"subject_type": "其他",
+             "construction_items": ["（结构化抽取失败，降级为原始描述检索）"],
+             "use_items": [], "terms": []},
             ensure_ascii=False,
         )
         return {
