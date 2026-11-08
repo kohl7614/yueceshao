@@ -149,6 +149,28 @@ def _write_details(path: Path, outcomes: Iterable[CaseOutcome]) -> None:
         writer.writerows(rows)
 
 
+def _write_group_details(path: Path, groups: Sequence[GroupResult]) -> None:
+    """写「组×逐案例」明细 CSV（三人分片跑批后合并的底层数据）。
+
+    合并消融矩阵不能简单平均比率（匹配/召回/引用错误都是比率），必须回底层
+    逐案例数据重算——本文件就是那份底层数据：每行带 ``group`` 前缀，其余列与
+    ``details.csv`` 同构。
+    """
+    rows = [
+        {"group": group.label, **item.to_row()}
+        for group in groups
+        for item in group.outcomes
+    ]
+    if not rows:
+        path.write_text("", encoding="utf-8-sig")
+        return
+    fieldnames = ["group"] + [key for key in rows[0] if key != "group"]
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def _write_matrix(path: Path, groups: Sequence[GroupResult]) -> None:
     """多组对比矩阵。"""
     fieldnames = [
@@ -196,6 +218,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="案例标注表 CSV 路径（团队数据仓，不入库）",
     )
     parser.add_argument("--limit", type=int, default=None, help="只跑前 N 条（smoke 用）")
+    parser.add_argument(
+        "--offset", type=int, default=0,
+        help="跳过前 N 条（三人分片跑批用：--offset 0/47/94 配合 --limit）")
     parser.add_argument("--out", default="runs/latest", help="输出目录，默认 runs/latest")
     parser.add_argument(
         "--registry", default=None,
@@ -266,7 +291,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     try:
-        cases = take(load_cases(args.cases), args.limit)
+        loaded = load_cases(args.cases)
+        if args.offset:
+            loaded = loaded[args.offset:]
+        cases = take(loaded, args.limit)
         registry = _load_registry(args.registry)
         for switch in args.ablate:
             if switch not in SWITCH_NAMES:
@@ -303,6 +331,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "pipeline": pipeline.name,
         "cases_file": str(Path(args.cases).resolve()),
         "case_limit": args.limit,
+        "case_offset": args.offset,
         "registry_provided": registry is not None,
         "switches": primary.switches.to_dict(),
         "switch_docs": {name: SWITCH_DOCS[name] for name in SWITCH_NAMES},
@@ -313,6 +342,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         json.dumps(metrics_payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     _write_details(out_dir / "details.csv", primary.outcomes)
+    _write_group_details(out_dir / "group_details.csv", groups)
     if len(groups) > 1:
         _write_matrix(out_dir / "ablation_matrix.csv", groups)
 
