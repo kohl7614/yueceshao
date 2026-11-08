@@ -42,6 +42,7 @@ __all__ = [
     "VERDICTS",
     "COLUMN_ALIASES",
     "extract_refs_from_text",
+    "summarize_annotation_quality",
 ]
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,11 @@ class EvalCase:
     expected_verdict: str | None = None
     expected_refs: tuple[str, ...] = field(default_factory=tuple)
     notes: str = ""
+    expected_refs_rejected: tuple[str, ...] = field(default_factory=tuple)
+    """标注列里**不是条款引用**的原文片段（说明文字/库内缺口备注）。
+
+    不计入召回分母，但要能报数：这是"题库缺口"与"系统未命中"的分界证据。
+    """
 
     @property
     def is_positive(self) -> bool:
@@ -165,14 +171,32 @@ class EvalCase:
         return self.expected_verdict == "hit"
 
 
-def _split_refs(raw: str) -> tuple[str, ...]:
-    """把 ``a;b; c`` 拆成去空、去重的有序元组。"""
-    parts = (token.strip() for token in raw.replace("；", ";").split(";"))
-    seen: dict[str, None] = {}
-    for token in parts:
-        if token:
-            seen.setdefault(token, None)
-    return tuple(seen)
+#: 紧凑写法「文号#序号」：文号必须是全形文号，序号为阿拉伯或中文数字。
+#: 这是标注表里唯一被接受的非「第X条」写法；其余一律不当条款引用——
+#: 实测标注列里混有「106号第十八条不覆盖（用地合规…）」「知识库暂无对应文件，
+#: 建议补采…」这类说明文字，旧实现把它原样当期望条款，召回分母被污染成 0。
+_STANDARD_REF_PATTERN = re.compile(
+    r"^(?P<doc>[\u4e00-\u9fa5]{2,10}〔\d{4}〕\d+号)#(?P<clause>[0-9]+|[一二三四五六七八九十百零两]+)$")
+
+
+def _split_refs(raw: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """拆分标注列：返回 ``(合法条款引用, 被拒的原文片段)``。
+
+    合法＝``文号#序号`` 紧凑写法（全形文号 + 数字序号）。被拒片段**不丢弃**，
+    由 :class:`EvalCase` 带着走并在产物里报数——口径外/库内缺口是事实，
+    既不能算成"未命中"，也不能悄悄消失。
+    """
+    accepted: dict[str, None] = {}
+    rejected: dict[str, None] = {}
+    for token in (part.strip() for part in raw.replace("；", ";").split(";")):
+        if not token:
+            continue
+        match = _STANDARD_REF_PATTERN.match(token)
+        if match:
+            accepted.setdefault(token, None)
+        else:
+            rejected.setdefault(token, None)
+    return tuple(accepted), tuple(rejected)
 
 
 def load_cases(path: str | Path) -> list[EvalCase]:
@@ -228,14 +252,20 @@ def load_cases(path: str | Path) -> list[EvalCase]:
             else:
                 verdict_raw = _verdict_from_warning(verdict_cell) or ""
 
+            raw_refs = _cell(row, "expected_refs")
+            parsed_refs = extract_refs_from_text(raw_refs)
+            if parsed_refs:
+                refs, rejected = parsed_refs, ()
+            else:
+                refs, rejected = _split_refs(raw_refs)
             cases.append(
                 EvalCase(
                     case_id=case_id,
                     query=query,
                     expected_verdict=verdict_raw or None,
-                    expected_refs=(extract_refs_from_text(_cell(row, "expected_refs"))
-                                   or _split_refs(_cell(row, "expected_refs"))),
+                    expected_refs=refs,
                     notes=_cell(row, "notes"),
+                    expected_refs_rejected=rejected,
                 )
             )
 
@@ -253,3 +283,29 @@ def take(cases: Iterable[EvalCase], limit: int | None) -> list[EvalCase]:
     if limit <= 0:
         raise ValueError(f"limit 必须为正整数或 None，收到 {limit!r}")
     return list(materialized)[:limit]
+
+
+def summarize_annotation_quality(cases: Sequence[EvalCase]) -> dict[str, object]:
+    """统计标注列质量：合法条款引用 / 被拒片段 / 无有效引用的应命中案例。
+
+    用途：写进 ``metrics.json``，让"召回分母里到底有多少真条款"可被审阅——
+    分母缩水必须伴随证据，不能只体现在指标数字变小。
+    """
+    valid = sum(len(case.expected_refs) for case in cases)
+    rejected = sum(len(case.expected_refs_rejected) for case in cases)
+    positives = [case for case in cases if case.expected_verdict == "hit"]
+    no_ref_positives = [case for case in positives if not case.expected_refs]
+    samples: dict[str, None] = {}
+    for case in cases:
+        for item in case.expected_refs_rejected:
+            if len(samples) < 10:
+                samples.setdefault(item[:80], None)
+    return {
+        "cases": len(cases),
+        "expected_refs_valid": valid,
+        "expected_refs_rejected": rejected,
+        "positive_cases": len(positives),
+        "positive_cases_without_ref": len(no_ref_positives),
+        "positive_cases_without_ref_ids": [case.case_id for case in no_ref_positives][:30],
+        "rejected_samples": list(samples),
+    }

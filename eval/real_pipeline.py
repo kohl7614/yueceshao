@@ -15,7 +15,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +44,36 @@ def _raw_clause(clause_no: str) -> str:
     text = (clause_no or "").strip()
     match = _CLAUSE_NUM.match(text)
     return match.group(1) if match else text
+
+
+def _build_llm_for_eval(config_path: Path) -> Any:
+    """按本机 ``config.json`` 的 ``generation`` 段装配真实 LLM（OpenAI 兼容客户端）。
+
+    评测口径要求「real ＝ 真检索 ＋ 真规则 ＋ 真 LLM」：不显式装配时
+    :class:`app.real_components.RealComponents` 会退回 :class:`MockLLM`，三指标随即
+    失去实验意义——故此处显式装配；key 不到位时**大声告警**而非静默降级。
+
+    :param config_path: 本机 config.json 路径
+    :return: 装配好的 LLM；配置段或 key 不到位时返回 ``None``（沿用 Mock）
+    """
+    from app.real_components import DEFAULT_ENV_PATH, QwenLLM, _load_config, read_env_file
+
+    config = _load_config(config_path)
+    section = config.get("generation") if isinstance(config, Mapping) else None
+    if not isinstance(section, Mapping):
+        logger.warning(
+            "config.json 缺 generation 段：LLM 退回 MockLLM，本次指标不代表真实系统")
+        return None
+    api_key_env = str(section.get("api_key_env") or "DASHSCOPE_API_KEY")
+    if not (os.environ.get(api_key_env) or read_env_file(DEFAULT_ENV_PATH).get(api_key_env)):
+        logger.warning(
+            "环境变量与 %s 均无 %s：LLM 退回 MockLLM，本次指标不代表真实系统",
+            DEFAULT_ENV_PATH, api_key_env)
+        return None
+    logger.info(
+        "LLM 装配：model=%s base_url=%s（key 来自环境变量/%s，不打印）",
+        section.get("model"), section.get("base_url"), api_key_env)
+    return QwenLLM(config)
 
 
 def _is_placeholder_doc_no(doc_no: str) -> bool:
@@ -72,9 +104,15 @@ class RealPipeline:
     ) -> None:
         # 局部 import：本模块被 eval.runner 以 --pipeline real 加载时才引入 app 重依赖；
         # CI（无索引/无 qwen key）跑其他 pipeline 不会因此崩。
-        from app.real_components import RealCheckupPipeline
+        from app.real_components import DEFAULT_CONFIG_PATH, RealCheckupPipeline
 
-        self._pipeline = RealCheckupPipeline(config_path, llm=llm)
+        # ⚠ 主分支把 config_path=None 直接透传给 RealCheckupPipeline，而其内部
+        # ``Path(config_path)`` 会 TypeError——故先归一到默认 config.json；
+        # 再按 generation 段装配真实 LLM（否则 RealComponents 默认 MockLLM，三指标是假的）。
+        target = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
+        if llm is None:
+            llm = _build_llm_for_eval(target)
+        self._pipeline = RealCheckupPipeline(target, llm=llm)
         if switches is not None:
             self.configure(switches)
         logger.info("RealPipeline 就绪（真实检索＋规则＋LLM 蕴含复核）")
