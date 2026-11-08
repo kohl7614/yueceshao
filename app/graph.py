@@ -34,6 +34,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from eval.gating import gated
 from gen.citation import build_meta_table, build_report, render_report
 from gen.schema import (
     ENTAILMENT_YES,
@@ -65,6 +66,28 @@ logger = logging.getLogger(__name__)
 
 # entail 复核失败时在②段渲染的显式标注（决策4：宁可少报不可错报，不阻断管线）
 ENTAIL_FAILURE_NOTE = "②段：LLM 蕴含复核未完成，仅显示规则引擎命中结果。"
+
+
+def _validator_bypass(
+    sections: Any, allowed: Any, chunk_texts: Any,
+) -> ValidationReport:
+    """citation_validator 开关关闭时的替代实现：视作"通过"，不做四类校验。
+
+    结构解析（``parse_generated``）与渲染层免责声明兜底**不受此开关影响**——
+    它们是解析防线与产品级红线，不属于"引用确定性校验器"这个可消融模块。
+    姿态禁语漏进正文时，评测侧 ``metrics`` 的事后扫描会如实记录（这正是消融
+    要展示的"校验器价值"）。
+    """
+    return ValidationReport(passed=True, issues=())
+
+
+#: 四类校验的消融接线（任务B）：开关经显式 source 或 contextvar 均可生效；
+#: 未进任何消融上下文时按全开处理，生产路径行为不变。
+validate_all_gated = gated(
+    "citation_validator",
+    fallback=_validator_bypass,
+    stage="validate.all",
+)(validate_all)
 
 
 class CheckupState(TypedDict, total=False):
@@ -200,7 +223,7 @@ def build_checkup_graph(components: OrchestrationComponents) -> Any:
             round_issues = (issue,)
             sections = None
         else:
-            report = validate_all(sections, allowed, chunk_texts)
+            report = validate_all_gated(sections, allowed, chunk_texts)
             issues_accum.extend(report.issues)
             if report.passed:
                 return {
