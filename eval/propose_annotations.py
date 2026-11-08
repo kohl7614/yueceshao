@@ -61,7 +61,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     store = load_store_from_config(Path(args.config))
     matcher = NegRuleMatcher(store)
 
-    rows = list(csv.DictReader(open(args.cases, encoding="utf-8-sig")))
+    with open(args.cases, encoding="utf-8-sig") as handle:
+        rows = list(csv.DictReader(handle))
     pending = [r for r in rows if (r.get("预期命中预警") or "").startswith("待P0")]
 
     fieldnames = [
