@@ -61,11 +61,11 @@ class StagedPipeline:
         self.stage_calls = 0
 
     def predict(self, case: EvalCase) -> CasePrediction:
-        self._rerank(["x"])
+        self._dense_step(["x"])
         return CasePrediction(verdict="miss")
 
-    @gated("rerank", stage="retrieve.rerank")
-    def _rerank(self, candidates: list[str]) -> list[str]:
+    @gated("dense_retrieval", stage="retrieve.dense")
+    def _dense_step(self, candidates: list[str]) -> list[str]:
         self.stage_calls += 1
         return candidates
 
@@ -292,19 +292,19 @@ def test_run_group_records_bypass_trace(tmp_path: Path) -> None:
     assert pipeline.stage_calls == 1
     assert full.trace["event_count"] == 0
 
-    # 消融组：stage 不再被调用，且 trace 记录了 rerank 的 bypass
+    # 消融组：stage 不再被调用，且 trace 记录了 dense_retrieval 的 bypass
     ablated = run_group(
         cases,
-        AblationSwitches.default().with_overrides(rerank=False),
+        AblationSwitches.default().with_overrides(dense_retrieval=False),
         pipeline,
         EvalThresholds(),
         registry=None,
     )
     assert pipeline.stage_calls == 1  # 没有新增调用——实现确实缺席
-    assert ablated.label == "w/o:rerank"
+    assert ablated.label == "w/o:dense_retrieval"
     assert ablated.trace["event_count"] == 1
-    assert ablated.trace["bypassed_switches"] == ["rerank"]
-    assert ablated.trace["stages"]["rerank"] == ["retrieve.rerank"]
+    assert ablated.trace["bypassed_switches"] == ["dense_retrieval"]
+    assert ablated.trace["stages"]["dense_retrieval"] == ["retrieve.dense"]
 
 
 def test_runner_writes_metrics_and_details(tmp_path: Path) -> None:

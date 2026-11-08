@@ -42,6 +42,7 @@ chunk_id 保留在 ``metadata.source_chunk_id`` 便于溯源。
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -49,6 +50,7 @@ import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from dataclasses import replace as _dc_replace
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +61,8 @@ from app.pipeline import (
     MOCK_GENERATION_JSON,
     PipelineResult,
 )
+from eval.config import AblationSwitches
+from eval.gating import SwitchTrace, ablation_context, gated
 from gen.prompts import (
     CONTEXT_BLOCK_FORMAT,
     EXTRACTION_SYSTEM_PROMPT,
@@ -72,7 +76,7 @@ from gen.prompts import (
 )
 from gen.schema import HIT_RULE, NegativeHit
 from rag.chunker import zh_number_to_int
-from rag.retriever import Hit, RetrievalResult
+from rag.retriever import DenseRetriever, Hit, RetrievalResult
 from rules.engine import MatchResult, NegRuleMatcher, RuleHit
 from rules.lexicon import FORBIDDEN_USE_CONCEPTS
 from rules.loader import load_store_from_config
@@ -99,6 +103,13 @@ _NEGATIVE_WORDS = ("不得", "禁止", "严禁")
 _UNCLAUSED_MARK = "未分条"
 _CLAUSE_NO_PATTERN = re.compile(r"^第?\s*([0-9一二三四五六七八九十百零〇两]+)\s*条?$")
 
+# query_decomposition 开关关闭时的替代抽取输出：合法（能过 parse_extraction 校验）
+# 且不含任何文号/结论性措辞——生成段据此知道"本次没有结构化抽取可用"。
+_EMPTY_EXTRACTION_JSON = json.dumps(
+    {"subject_type": "其他", "construction_items": ["（查询分解已关闭，无结构化抽取）"],
+     "use_items": [], "terms": []},
+    ensure_ascii=False)
+
 
 class RealAdapterError(RuntimeError):
     """真实适配器装配失败（索引／模型／规则库缺失，报错带可操作提示）。"""
@@ -113,8 +124,6 @@ class QwenKeyMissingError(RealAdapterError):
 
 def _load_config(config_path: Path) -> dict[str, Any]:
     """读本机 config.json；不存在时返回空配置（Mock 组件不依赖它）。"""
-    import json
-
     if not config_path.is_file():
         logger.warning("配置文件不存在：%s（真实检索需要它指向数据仓/索引/模型）", config_path)
         return {}
@@ -456,6 +465,21 @@ class RetrievalPlan:
     """
 
 
+def _dense_retrieval_fallback(description: str) -> RetrievalResult:
+    """dense_retrieval 关闭时的替代实现：空召回（不编码、不查库）。"""
+    return RetrievalResult(query=description, hits=[])
+
+
+def _rule_match_fallback(description: str) -> MatchResult:
+    """rule_scan 关闭时的替代实现：零命中。"""
+    return MatchResult(hits=(), description_terms=())
+
+
+def _entail_fallback(*_args: Any, **_kwargs: Any) -> str:
+    """entail_review 关闭时的替代实现：空复核结果（②段无疑似命中）。"""
+    return "[]"
+
+
 class RealComponents:
     """真实检索＋真实规则扫描的组件集（LLM 默认 Mock，可注入 QwenLLM）。"""
 
@@ -464,11 +488,14 @@ class RealComponents:
         config_path: Path | str = DEFAULT_CONFIG_PATH,
         *,
         retriever: Any = None,
+        retriever_plain: Any = None,
         matcher: Any = None,
         llm: MockLLM | QwenLLM | None = None,
     ) -> None:
         """:param config_path: 本机 config.json（数据仓/索引/embedding 路径）
-        :param retriever: 注入检索器（测试用）；None 时按配置装配真实 DenseRetriever
+        :param retriever: 注入检索器（时效过滤开启态；测试用）；None 时按配置装配真实 DenseRetriever
+        :param retriever_plain: 注入"无时效过滤"检索器（temporal_filter 消融组用）；
+            None 且真实检索器带 config 时自动构造同 backend 的关闭时效变体
         :param matcher: 注入规则匹配器（测试用）；None 时从数据仓规则库装配
         :param llm: LLM 组件；None 用 :class:`MockLLM`
         """
@@ -480,6 +507,10 @@ class RealComponents:
         # 没有这把锁时两路会各自算一遍命中计划：既重复跑一次模型编码，
         # 更严重的是两路可能拿到不同批的标记（[Cn] 编号不一致 → ②段引用错位）。
         self._plan_lock = threading.Lock()
+        # 消融状态（任务B）：默认 None＝全开；由 RealPipeline.configure 显式注入，
+        # 不依赖 contextvar 跨线程继承（LangGraph 并行分支的确定性要求）。
+        self._switches: AblationSwitches | None = None
+        self._trace: SwitchTrace | None = None
 
         building_retriever = retriever is None
         building_matcher = matcher is None
@@ -494,6 +525,50 @@ class RealComponents:
                 raise RealAdapterError(
                     "检索集合为空：persist_dir 可能指错目录（Chroma 会自动建空集合、"
                     "count 读成 0，不报错）。请先用 scripts/verify_index.py 核对索引。")
+        self._retriever_plain = self._build_plain_retriever(retriever_plain)
+        # 消融接线（任务B）：实例级 gated 包装——显式 source 优先于 contextvar，
+        # 保证 bypass 记录与跳过行为在 LangGraph 线程里同样确定。
+        self._dense_retrieve = gated(
+            "dense_retrieval", fallback=_dense_retrieval_fallback,
+            stage="retrieve.dense", source=self._ablation_source)(self._dense_retrieve_impl)
+        self._rule_match = gated(
+            "rule_scan", fallback=_rule_match_fallback,
+            stage="rules.scan", source=self._ablation_source)(self._rule_match_impl)
+        self._extract = gated(
+            "query_decomposition", fallback=lambda _description: _EMPTY_EXTRACTION_JSON,
+            stage="parse.extract", source=self._ablation_source)(self._extract_impl)
+        self._entail = gated(
+            "entail_review", fallback=_entail_fallback,
+            stage="entail.review", source=self._ablation_source)(self._entail_impl)
+
+    def _build_plain_retriever(self, retriever_plain: Any) -> Any:
+        """无时效过滤的检索器变体：注入优先；真实检索器带 config 时自动构造。"""
+        if retriever_plain is not None:
+            return retriever_plain
+        base_config = getattr(self._retriever, "config", None)
+        if base_config is None or not hasattr(base_config, "enable_temporal_filter"):
+            return self._retriever  # 注入的假检索器无配置：复用同对象（行为不变）
+        return DenseRetriever(
+            self._retriever.embedder, self._retriever.backend,
+            _dc_replace(base_config, enable_temporal_filter=False))
+
+    # —— 消融状态（任务B）——
+    def set_ablation(
+        self, switches: AblationSwitches, trace: SwitchTrace | None = None,
+    ) -> None:
+        """显式注入消融开关与 trace（评测跑批入口）；覆盖此前状态。"""
+        self._switches = switches
+        self._trace = trace if trace is not None else SwitchTrace()
+
+    def ablation_state(self) -> tuple[AblationSwitches, SwitchTrace] | None:
+        """当前消融状态；未注入时返回 ``None``（语义＝全开、走 contextvar）。"""
+        if self._switches is None:
+            return None
+        return (self._switches, self._trace)
+
+    def _ablation_source(self) -> tuple[AblationSwitches, SwitchTrace] | None:
+        """gated 的显式来源：有注入就返回，让 gated 不依赖 contextvar。"""
+        return self.ablation_state()
 
     # —— 就绪检查（文件级；报错带可操作提示）——
     def _ensure_files(self) -> None:
@@ -532,11 +607,10 @@ class RealComponents:
 
     def _compute_plan(self, key: str) -> RetrievalPlan:
         """真正的计划计算（只在持锁期间调用，不自行读写缓存）。"""
-        retrieval = (
-            self._retriever.retrieve(key) if key else RetrievalResult(query="", hits=[]))
-        match = (
-            self._matcher.match(key) if key
-            else MatchResult(hits=(), description_terms=()))
+        # 任务B：稠密检索与规则匹配经 gated 执行——开关关闭时真跳过（不编码/不扫库）
+        # 并记 bypass；temporal_filter 在 _dense_retrieve_impl 内部选择检索器变体。
+        retrieval = self._dense_retrieve(key)
+        match = self._rule_match(key)
 
         hits: list[dict[str, Any]] = []
         # 同一 (文件序号, 条序号) 在真实索引里可能对应**多个不同原文的分块**（实测数千组），
@@ -634,7 +708,30 @@ class RealComponents:
         """编排图规则回调：真负面清单全量扫描（确定性，无 LLM）。"""
         return self._plan(description).negative_hits
 
-    def _entail(
+    # —— 可消融模块的执行函数（任务B：gated 包装在 __init__ 里以实例属性生效）——
+    def _dense_retrieve_impl(self, description: str) -> RetrievalResult:
+        """稠密检索执行体：按 temporal_filter 开关选用"有时效/无时效"检索器变体。"""
+        use_plain = (
+            self._switches is not None
+            and not self._switches.is_enabled("temporal_filter"))
+        if use_plain and self._trace is not None:
+            self._trace.record("temporal_filter", "retrieve.temporal")
+        retriever = self._retriever_plain if use_plain else self._retriever
+        return (
+            retriever.retrieve(description)
+            if description else RetrievalResult(query="", hits=[]))
+
+    def _rule_match_impl(self, description: str) -> MatchResult:
+        """规则扫描执行体：负面清单全量确定性匹配。"""
+        return (
+            self._matcher.match(description)
+            if description else MatchResult(hits=(), description_terms=()))
+
+    def _extract_impl(self, description: str) -> str:
+        """查询结构化抽取执行体（LLM 第一段）。"""
+        return self._llm.extract(description)
+
+    def _entail_impl(
         self, description: str, hits: Sequence[dict[str, Any]], feedback: str | None = None,
     ) -> str:
         """②段蕴含复核：喂 **G01-G11 载体全集**（而不是"hits 里 origin=negative-list 的那些块"）。
@@ -673,7 +770,7 @@ class RealComponents:
     def components(self) -> OrchestrationComponents:
         """暴露编排图五回调（检索/规则为真，LLM 由注入决定）。"""
         return OrchestrationComponents(
-            extract=self._llm.extract,
+            extract=self._extract,
             retrieve=self.retrieve,
             rule_scan=self.rule_scan,
             entail_review=self._entail,
@@ -714,7 +811,14 @@ class RealCheckupPipeline:
         started = time.monotonic()
         self.components.reset_plans()
         graph = build_checkup_graph(self.components.components())
-        final = graph.invoke({"description": description})
+        state = self.components.ablation_state()
+        if state is not None:
+            # 任务B：显式开关经 ablation_context 重进上下文——主线程与图内线程
+            # 都从这份确定状态派生（gated 的显式 source 同样可用，双保险）。
+            with ablation_context(*state):
+                final = graph.invoke({"description": description})
+        else:
+            final = graph.invoke({"description": description})
         elapsed = int((time.monotonic() - started) * 1000)
         return PipelineResult(
             report=final["report"],
@@ -723,6 +827,7 @@ class RealCheckupPipeline:
             attempts=final["attempts"],
             failed_sections=final["failed_sections"],
             elapsed_ms=elapsed,
+            entail_failed=bool(final.get("entail_failed", False)),
         )
 
 

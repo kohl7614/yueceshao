@@ -14,14 +14,19 @@ README 编码规范要求「全部消融开关集中在 `eval/` 的配置布尔�
 
 六组开关，语义统一为 **`True`＝启用该模块（默认，完整系统）**，`False`＝移除（消融组）：
 
-| 开关 | 模块 |
+| 开关 | 模块（与 real_pipeline 实际实现一一对应） |
 |---|---|
-| `temporal_filter` | 时序版本过滤：按查询时间剔除已废止条款 |
-| `negative_hard_constraint` | 负面清单硬约束注入：命中即中断生成并给替代建议 |
-| `rerank` | Cross-Encoder 重排：对召回结果做精排 |
-| `hybrid_retrieval` | 混合检索：BM25 与向量双路召回（关闭后仅走向量） |
-| `query_decomposition` | 查询分解：结构化抽取与术语归一化 |
+| `temporal_filter` | 时序版本过滤：按查询时间剔除已废止条款（检索器变体切换） |
+| `dense_retrieval` | 稠密检索：embedding 编码 + Chroma top-k（关闭后①段无检索上下文，规则块仍保留） |
+| `rule_scan` | 规则扫描：负面清单全量确定性匹配（关闭后②段仅剩 LLM 蕴含命中） |
+| `entail_review` | 蕴含复核：LLM 对 G01-G11 载体的二次确认（关闭后②段仅剩规则命中） |
+| `query_decomposition` | 查询分解：结构化抽取与术语归一化（关闭后生成段拿不到抽取结果） |
 | `citation_validator` | 引用校验器：标记存在性 / 上下文包含性 / 姿态禁语兜底 |
+
+> 2026-11-08 任务B 重定义：旧名 `rerank`／`hybrid_retrieval`／`negative_hard_constraint`
+> 在真实管线中无对应模块，已从口径中移除——旧名出现在 `--ablate`／`ablation.json`／
+> `YUECESHAO_ABLATION_*` 环境变量会当场报错，杜绝"关掉不存在的模块"的假消融。
+> 设计与行为变化见 `docs/消融接线设计-20261108.md`。
 
 配置来源三选一，优先级由调用方决定：
 

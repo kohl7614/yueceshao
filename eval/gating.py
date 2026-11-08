@@ -139,6 +139,7 @@ def gated(
     *,
     fallback: Callable[..., Any] | None = None,
     stage: str | None = None,
+    source: Callable[[], tuple[AblationSwitches, SwitchTrace] | None] | None = None,
 ) -> Callable[[F], F]:
     """装饰一个可消融的 stage 函数。
 
@@ -148,6 +149,10 @@ def gated(
     :param switch: 开关名，必须是 :data:`eval.config.SWITCH_NAMES` 之一
     :param fallback: 开关关闭时的替代实现，签名与原函数一致
     :param stage: 报告中显示的阶段名，缺省用函数限定名
+    :param source: 显式开关来源（返回 ``(switches, trace)`` 或 ``None``）。提供时
+        **优先于** contextvar——LangGraph 并行分支在独立线程执行，contextvar 的
+        继承没有保证；评测口径必须建在确定性通道上。未提供时走 contextvar（PR1
+        语义，向后兼容）。
     """
     if switch not in AblationSwitches.default().to_dict():
         raise ValueError(f"未知的消融开关 {switch!r}")
@@ -157,14 +162,26 @@ def gated(
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            switches = current_switches()
-            if switches is not None and not switches.is_enabled(switch):
-                trace = current_trace()
-                if trace is not None:
-                    trace.record(switch=switch, stage=stage_name)
-                if fallback is not None:
-                    return fallback(*args, **kwargs)
-                return None
+            switches: AblationSwitches | None
+            trace: SwitchTrace | None
+            explicit = source() if source is not None else None
+            if explicit is not None:
+                switches, trace = explicit
+                if not switches.is_enabled(switch):
+                    if trace is not None:
+                        trace.record(switch=switch, stage=stage_name)
+                    if fallback is not None:
+                        return fallback(*args, **kwargs)
+                    return None
+            else:
+                switches = current_switches()
+                if switches is not None and not switches.is_enabled(switch):
+                    trace = current_trace()
+                    if trace is not None:
+                        trace.record(switch=switch, stage=stage_name)
+                    if fallback is not None:
+                        return fallback(*args, **kwargs)
+                    return None
             return func(*args, **kwargs)
 
         wrapper.__ablation_switch__ = switch
