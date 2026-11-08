@@ -13,7 +13,14 @@ from pathlib import Path
 import pytest
 
 from eval.config import AblationSwitches
-from eval.dataset import DatasetError, EvalCase, RegistryError, load_cases, take
+from eval.dataset import (
+    DatasetError,
+    EvalCase,
+    RegistryError,
+    load_cases,
+    summarize_annotation_quality,
+    take,
+)
 from eval.gating import gated
 from eval.metrics import (
     FORBIDDEN_PHRASES,
@@ -74,21 +81,73 @@ class StagedPipeline:
 
 
 def test_load_cases_parses_rows(tmp_path: Path) -> None:
-    """正常读取：判定归一化小写、refs 分号拆分去重、备注保留。"""
+    """正常读取：判定归一化小写、refs 分号拆分去重、备注保留。
+
+    夹具用〔2099〕人造文号（红线：测试不出现真实年份文号）。
+    """
     path = _write_cases(
         tmp_path / "cases.csv",
         [
-            ["CASE-A", "描述甲", "HIT", "REF-A; REF-B;REF-A", "备注甲"],
+            ["CASE-A", "描述甲", "HIT",
+             "粤测农〔2099〕1号#4; 粤测农〔2099〕2号#5;粤测农〔2099〕1号#4", "备注甲"],
             ["CASE-B", "描述乙", "", "", ""],
         ],
     )
     cases = load_cases(path)
     assert [case.case_id for case in cases] == ["CASE-A", "CASE-B"]
     assert cases[0].expected_verdict == "hit"
-    assert cases[0].expected_refs == ("REF-A", "REF-B")
+    assert cases[0].expected_refs == ("粤测农〔2099〕1号#4", "粤测农〔2099〕2号#5")
+    assert cases[0].expected_refs_rejected == ()
     assert cases[0].notes == "备注甲"
     assert cases[1].expected_verdict is None
     assert cases[1].expected_refs == ()
+
+
+def test_load_cases_rejects_annotation_prose_as_refs(tmp_path: Path) -> None:
+    """标注列里的说明文字不得被当成期望条款（2026-11-08 实跑发现的分母污染）。
+
+    实测形态：「106号第十八条不覆盖（用地合规属…）」「知识库暂无对应文件，建议补采…」
+    旧实现把它们原样收进 expected_refs，等于给召回分母塞了永远命不中的项目。
+    """
+    path = _write_cases(
+        tmp_path / "cases.csv",
+        [
+            ["CASE-P", "描述丙", "hit",
+             "106号第十八条不覆盖（用地合规属自然资源政策口径）；"
+             "知识库暂无对应政策文件，建议补采设施农业用地管理规定", ""],
+            ["CASE-Q", "描述丁", "hit",
+             "粤测农〔2099〕9号#7；知识库缺口：待补采政策性农业保险相关条款", ""],
+        ],
+    )
+    cases = load_cases(path)
+    # 全是说明文字：不产生期望条款，但原文要留证据（不静默丢弃）
+    assert cases[0].expected_refs == ()
+    assert cases[0].expected_refs_rejected == (
+        "106号第十八条不覆盖（用地合规属自然资源政策口径）",
+        "知识库暂无对应政策文件，建议补采设施农业用地管理规定",
+    )
+    # 真假混写：只收合法条款，说明文字进 rejected
+    assert cases[1].expected_refs == ("粤测农〔2099〕9号#7",)
+    assert cases[1].expected_refs_rejected == ("知识库缺口：待补采政策性农业保险相关条款",)
+
+
+def test_summarize_annotation_quality_counts(tmp_path: Path) -> None:
+    """标注质量统计：合法引用数、被拒片段数、无有效引用的应命中案例清单。"""
+    path = _write_cases(
+        tmp_path / "cases.csv",
+        [
+            ["CASE-1", "描述甲", "hit", "粤测农〔2099〕1号#4", ""],
+            ["CASE-2", "描述乙", "hit", "106号第十八条不覆盖", ""],
+            ["CASE-3", "描述丙", "miss", "", ""],
+        ],
+    )
+    quality = summarize_annotation_quality(load_cases(path))
+    assert quality["cases"] == 3
+    assert quality["expected_refs_valid"] == 1
+    assert quality["expected_refs_rejected"] == 1
+    assert quality["positive_cases"] == 2
+    assert quality["positive_cases_without_ref"] == 1
+    assert quality["positive_cases_without_ref_ids"] == ["CASE-2"]
 
 
 def test_load_cases_missing_file_mentions_data_hub(tmp_path: Path) -> None:

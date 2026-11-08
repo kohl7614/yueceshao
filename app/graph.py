@@ -27,6 +27,7 @@ Mock 夹具全部〔2099〕人造文号＋自造条款原文（红线⑤⑥）�
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -112,6 +113,7 @@ class CheckupState(TypedDict, total=False):
     gen_attempts: int
     issues_accum: tuple
     entail_failed: bool
+    extraction_failed: bool
 
 
 @dataclass(frozen=True)
@@ -154,8 +156,41 @@ def build_checkup_graph(components: OrchestrationComponents) -> Any:
     """编译体检编排图（返回 CompiledGraph；``invoke({"description": ...})`` 触发）。"""
 
     def parse_node(state: CheckupState) -> dict:
-        extraction_json = components.extract(state["description"])
-        return {"extraction": parse_extraction(extraction_json), "extraction_json": extraction_json}
+        """①检索前的结构化抽取。
+
+        SchemaError（真实模型偶发非法 JSON）→ 重试 ≤2（与 entail/generate 同款 A9 语义），
+        仍失败则**降级为空抽取**（检索退化为仅用原始描述）并置 ``extraction_failed``，
+        不阻断管线。主分支此处无重试：一条非法 JSON 会把整批跑批打挂（实测 GLM-5.3
+        在第 4 条案例上触发）。
+        """
+        description = state["description"]
+        for attempt in range(1, MAX_RETRIES + 2):
+            try:
+                extraction_json = components.extract(description)
+                return {
+                    "extraction": parse_extraction(extraction_json),
+                    "extraction_json": extraction_json,
+                }
+            except SchemaError as exc:
+                logger.warning("结构化抽取解析失败（第 %d 次）：%s", attempt, exc)
+            except Exception:  # noqa: BLE001 - 网络/key 异常重试无益，直接降级
+                logger.warning("结构化抽取调用失败，降级为空抽取", exc_info=True)
+                break
+        logger.warning("结构化抽取重试耗尽，①段检索降级为仅用原始描述")
+        # 降级抽取必须是**合法结构**（过 QueryExtraction.validate：subject_type 合法＋
+        # 至少一个条目），否则 parse_extraction 抛 SchemaError 反而打挂管线——与本节点
+        # 「不阻断管线」的目标相反（#76 终审抓到的阻断项）。
+        empty_json = json.dumps(
+            {"subject_type": "其他",
+             "construction_items": ["（结构化抽取失败，降级为原始描述检索）"],
+             "use_items": [], "terms": []},
+            ensure_ascii=False,
+        )
+        return {
+            "extraction": parse_extraction(empty_json),
+            "extraction_json": empty_json,
+            "extraction_failed": True,
+        }
 
     def retrieve_node(state: CheckupState) -> dict:
         hits = components.retrieve(state["description"], state["extraction"])

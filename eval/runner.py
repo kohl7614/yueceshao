@@ -31,7 +31,13 @@ from pathlib import Path
 from typing import Any
 
 from eval.config import SWITCH_DOCS, SWITCH_NAMES, AblationSwitches
-from eval.dataset import EvalCase, RegistryError, load_cases, take
+from eval.dataset import (
+    EvalCase,
+    RegistryError,
+    load_cases,
+    summarize_annotation_quality,
+    take,
+)
 from eval.gating import ablation_context
 from eval.metrics import (
     CaseOutcome,
@@ -335,6 +341,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "registry_provided": registry is not None,
         "switches": primary.switches.to_dict(),
         "switch_docs": {name: SWITCH_DOCS[name] for name in SWITCH_NAMES},
+        # 标注列质量：召回分母里有多少真条款引用、多少是口径外原文——
+        # 分母缩水必须附证据，避免「指标变好但没人知道分母被砍过」。
+        "annotation_quality": summarize_annotation_quality(cases),
         "trace": primary.trace,
         **primary.summary.to_dict(),
     }

@@ -22,6 +22,7 @@ from gen.schema import (
     HIT_RULE,
     HIT_SUSPECT,
     NegativeHit,
+    SchemaError,
 )
 
 VALID = (
@@ -107,6 +108,32 @@ class TestEntailMerge:
             {"description": VALID})
         citations = {h.citation for h in final["negative_hits"]}
         assert citations == {"[C1]", "[C2]"}
+
+
+# ---------------------------------------------------------------------------
+# 1.5 抽取失败降级（P1-1，#76 终审修复）
+# ---------------------------------------------------------------------------
+
+class TestExtractFailure:
+    def test_extract_failure_degrades_without_crashing(self) -> None:
+        """extract 反复抛 SchemaError → 降级为合法空抽取，不阻断管线、报告仍产出。
+
+        #76 终审抓到的阻断项：旧降级用 ``subject_type=""``＋空条目，过不了
+        QueryExtraction.validate，parse_extraction 抛 SchemaError 反而打挂管线。
+        """
+        def broken_extract(d):
+            raise SchemaError("非法抽取 JSON")
+
+        components = OrchestrationComponents(
+            extract=broken_extract,
+            retrieve=lambda d, e: MOCK_HITS,
+            rule_scan=lambda d: (),
+            entail_review=lambda d, h, fb=None: "[]",
+            generate=lambda d, ej, cb, fb: MOCK_GENERATION_JSON,
+        )
+        final = build_checkup_graph(components).invoke({"description": VALID})
+        assert final["extraction_failed"] is True
+        assert final["rendered_text"]  # 降级后报告仍产出（不阻断）
 
 
 # ---------------------------------------------------------------------------
