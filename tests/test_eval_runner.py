@@ -504,3 +504,32 @@ def test_runner_exit_code_two_on_bad_registry(tmp_path: Path) -> None:
     )
     assert exit_code == 2
     assert not (tmp_path / "out" / "metrics.json").exists()
+
+
+def test_load_cases_accepts_unnumbered_clause_ref(tmp_path: Path) -> None:
+    """未分条条款可作期望条款（2026-11-08 裁定 3：多数耕地保护载体无条款号）。
+
+    打分侧必须与预测侧同键：真实管线用「未分条（原文无条款号）」作条款标识，
+    若注解拒收这一形态，重指向到未分条载体的案例将永远记 miss。
+    """
+    path = _write_cases(
+        tmp_path / "cases.csv",
+        [[("CASE-U"), "描述", "hit", "粤测农〔2099〕1号#未分条（原文无条款号）", ""]]
+    )
+    cases = load_cases(path)
+    assert cases[0].expected_refs == ("粤测农〔2099〕1号#未分条（原文无条款号）",)
+    assert cases[0].expected_refs_rejected == ()
+
+
+def test_load_cases_normalizes_chinese_clause_number(tmp_path: Path) -> None:
+    """标注写中文序号时须归一到阿拉伯序号（与预测侧键一致）。
+
+    预测侧引用是 ``文号#20``；若标注写 ``文号#二十`` 原样保留，比对永不相等、
+    静默记 miss。这是与「未分条规范名」同类的键不一致问题。
+    """
+    path = _write_cases(
+        tmp_path / "cases.csv",
+        [["CASE-N", "描述", "hit", "粤测农〔2099〕1号#二十", ""]]
+    )
+    cases = load_cases(path)
+    assert cases[0].expected_refs == ("粤测农〔2099〕1号#20",)

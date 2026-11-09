@@ -175,8 +175,12 @@ class EvalCase:
 #: 这是标注表里唯一被接受的非「第X条」写法；其余一律不当条款引用——
 #: 实测标注列里混有「106号第十八条不覆盖（用地合规…）」「知识库暂无对应文件，
 #: 建议补采…」这类说明文字，旧实现把它原样当期望条款，召回分母被污染成 0。
+#: 未分条条款的规范写法（与 rules/schema.py 的 clause_no、registry 导出同键）。
+_CLAUSE_UNNUMBERED = "未分条（原文无条款号）"
+
 _STANDARD_REF_PATTERN = re.compile(
-    r"^(?P<doc>[\u4e00-\u9fa5]{2,10}〔\d{4}〕\d+号)#(?P<clause>[0-9]+|[一二三四五六七八九十百零两]+)$")
+    r"^(?P<doc>[\u4e00-\u9fa5]{2,10}〔\d{4}〕\d+号)"
+    r"#(?P<clause>[0-9]+|[一二三四五六七八九十百零两]+|" + re.escape(_CLAUSE_UNNUMBERED) + r")$")
 
 
 def _split_refs(raw: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -193,7 +197,9 @@ def _split_refs(raw: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
             continue
         match = _STANDARD_REF_PATTERN.match(token)
         if match:
-            accepted.setdefault(token, None)
+            # 归一：中文序号也要转成阿拉伯序号（预测侧键是 ``文号#20``），
+            # 否则标注写「#二十」会永远与预测侧的「#20」错位、静默记 miss。
+            accepted.setdefault(normalize_ref(match.group("doc"), match.group("clause")), None)
         else:
             rejected.setdefault(token, None)
     return tuple(accepted), tuple(rejected)

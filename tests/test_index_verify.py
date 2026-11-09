@@ -112,9 +112,9 @@ class TestVerdict:
 @pytest.mark.skipif(
     not READY, reason="本机无真实 Chroma 索引（config.json/.chroma 不在位），跳过集成冒烟")
 def test_real_index_count_and_samples() -> None:
-    """真实索引：块数=20099、抽检 10 块 metadata 齐全、审计公告零泄漏。"""
+    """真实索引：块数=20100、抽检 10 块 metadata 齐全、审计公告零泄漏。"""
     result = verify_index(config_path=CONFIG_PATH)
     assert result.count == DEFAULT_EXPECTED_COUNT
-    assert result.doc_count == 718
+    assert result.doc_count == 719
     assert all(sample.ok for sample in result.samples), result.summary()
     assert result.audit_leaks == (), result.summary()
