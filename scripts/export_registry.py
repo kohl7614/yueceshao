@@ -32,8 +32,14 @@ _CLAUSE_NUM = re.compile(r"^第?\s*([0-9一二三四五六七八九十百零〇�
 
 
 def _raw_clause(clause_no: str) -> str:
-    """把「第四条」→「四」（去掉第/条前后缀，供 normalize_ref 归一到阿拉伯序号）。"""
+    """把「第四条」→「四」（去掉第/条前后缀，供 normalize_ref 归一到阿拉伯序号）。
+
+    与 ``eval/real_pipeline.py`` 同源：条款号为空时归一为「未分条（原文无条款号）」，
+    保证导出侧与引用核验侧的键一致。
+    """
     text = (clause_no or "").strip()
+    if not text:
+        return "未分条（原文无条款号）"
     match = _CLAUSE_NUM.match(text)
     return match.group(1) if match else text
 

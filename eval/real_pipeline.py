@@ -39,9 +39,22 @@ _PLACEHOLDER_DOC_NO_PREFIX = "无（"
 _PLACEHOLDER_DOC_NO_MARKER = "页面未载"
 
 
+#: 条款号缺失时的规范取值（与数据仓规则库/registry 导出同键）。
+CLAUSE_UNNUMBERED = "未分条（原文无条款号）"
+
+
 def _raw_clause(clause_no: str) -> str:
-    """把「第四条」→「四」（去掉第/条前后缀，供 normalize_ref 归一到阿拉伯序号）。"""
+    """把「第四条」→「四」（去掉第/条前后缀，供 normalize_ref 归一到阿拉伯序号）。
+
+    条款号为空时归一为 :data:`CLAUSE_UNNUMBERED`——索引里「未分条」文件的正文块
+    ``clause`` 元数据是空串，若直接拼成 ``文号#`` 会与 registry 的规范键
+    ``文号#未分条（原文无条款号）`` 对不上，导致每条这类引用都被判"无法核验"。
+    实测（kohl 分片 36 条）：184 个空条款引用全部属于正文块，按规范名归一后
+    184/184 可核验，是把引用错误率从 42.8% 拉回来的关键。
+    """
     text = (clause_no or "").strip()
+    if not text:
+        return CLAUSE_UNNUMBERED
     match = _CLAUSE_NUM.match(text)
     return match.group(1) if match else text
 
