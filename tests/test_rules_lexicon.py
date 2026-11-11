@@ -195,3 +195,44 @@ class TestBoundaryNarrowing:
         result = NegRuleMatcher(self._store()).match("拟在基本农田和占用耕地种树八十亩。")
         assert result.hits
         assert "占用耕地" in result.hits[0].matched_description_terms
+
+
+# ---------------------------------------------------------------------------
+# 锚点补齐（2026-11-11 工作包）：纯描述条款的概念锚点
+# ---------------------------------------------------------------------------
+# 背景：106号#18(一)「行政事业单位基本支出」与 粤财金〔2024〕1号#43(一)
+# 「虚构或者虚增保险标的」都是纯描述条款，条款文本不含既有概念词，规则引擎
+# 结构性命不中。补锚点后：强词单独触发，弱词需违规语境窗口共现才触发。
+
+def _anchor_store(clause_text: str, group_id: str) -> NegRuleMatcher:
+    return NegRuleMatcher(RuleStore(records_from_dicts([_record(clause_text, group_id=group_id)])))
+
+
+def test_insurance_strong_term_hits_descriptive_clause() -> None:
+    """强词（多报投保面积）↔ 条款侧锚点（虚增保险标的）同组即命中。"""
+    matcher = _anchor_store("（一）虚构或者虚增保险标的，或者以同一保险标的进行多次投保。", "虚增与重复申报")
+    assert matcher.match("投保面积按1500亩报，实际约1200亩，多报投保面积以多领保费").hits
+
+
+def test_insurance_weak_term_alone_does_not_arm() -> None:
+    """弱词（投保面积）单独出现不触发：合规投保描述不得被打标。"""
+    matcher = _anchor_store("（一）虚构或者虚增保险标的。", "虚增与重复申报")
+    assert matcher.match("按实际种植面积投保，投保面积1200亩，保险单据统一保管").hits == ()
+
+
+def test_insurance_weak_term_with_context_arms() -> None:
+    """弱词 + 违规语境词（超范围）共现时才触发。"""
+    matcher = _anchor_store("（一）虚构或者虚增保险标的。", "虚增与重复申报")
+    assert matcher.match("投保面积超范围申报，实际种植面积小于申报面积").hits
+
+
+def test_basic_expenditure_weak_term_with_frame_arms() -> None:
+    """弱词（人员工资）+ 语境词（用于）↔ 条款锚点（基本支出）同组即命中。"""
+    matcher = _anchor_store("（一）行政事业单位基本支出。", "行政事业单位基本支出")
+    assert matcher.match("拟计提管理费用，用于公司人员工资、办公和差旅等日常开支").hits
+
+
+def test_basic_expenditure_compliant_phrase_does_not_hit() -> None:
+    """合规表述「人员经费已列预算」「基本支出由财政保障」不得误报（判据①）。"""
+    matcher = _anchor_store("（一）行政事业单位基本支出。", "行政事业单位基本支出")
+    assert matcher.match("项目人员经费已列入预算，基本支出由财政保障").hits == ()
