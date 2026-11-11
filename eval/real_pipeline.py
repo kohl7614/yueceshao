@@ -130,6 +130,16 @@ class RealPipeline:
             self.configure(switches)
         logger.info("RealPipeline 就绪（真实检索＋规则＋LLM 蕴含复核）")
 
+    @property
+    def components(self) -> Any:
+        """内层 RealCheckupPipeline 的组件视图（runner 读 ``llm_backend`` 输出诚实文案）。
+
+        runner 持有的是本包装器而非内层管线——不委托的话 ``getattr(pipeline,
+        "components")`` 取不到，真跑会被误报成「LLM 退回 MockLLM」（2026-11-12
+        kohl-v4 实跑暴露：973 次真调用却被标 mock，默认值方向反了）。
+        """
+        return self._pipeline.components
+
     def configure(self, switches: Any, trace: Any | None = None) -> None:
         """显式注入消融开关与 trace（任务B：runner 把 AblationSwitches 真正传给管线）。
 
