@@ -34,20 +34,20 @@ README 编码规范要求「全部消融开关集中在 `eval/` 的配置布尔�
 from eval.config import AblationSwitches
 
 AblationSwitches.default()                                   # 完整系统
-AblationSwitches.from_mapping({"rerank": False})             # 代码内指定
+AblationSwitches.from_mapping({"entail_review": False})      # 代码内指定
 AblationSwitches.from_json_file("eval/ablation.json")        # 配置文件
-AblationSwitches.from_env()                                  # YUECESHAO_ABLATION_RERANK=0
+AblationSwitches.from_env()                                  # YUECESHAO_ABLATION_ENTAIL_REVIEW=0
 ```
 
 `eval/ablation.example.json` 是样例；真实 `ablation.json` 不入库（`.gitignore` 已挡
 `eval/ablation.json`）。开关名写错、取值非 bool 一律**当场报错**，不静默忽略——消融配置
 静默失效会让实验结论失真。这条严格性对三个入口一致：`from_mapping` / `from_json_file` /
 `from_env` 遇到无法识别的开关名都抛 `ValueError`（`from_env` 会连同前缀扫一遍环境变量，
-手滑写成 `YUECESHAO_ABLATION_RERANKK` 也会被抓住，不会因为多打一个 K 就静默放行）。
+手滑写成 `YUECESHAO_ABLATION_ENTAIL_REVIEWW` 也会被抓住，不会因为多打一个 W 就静默放行）。
 
 ## 开关如何被观测（`eval/gating.py`）
 
-给可消融的 stage 套 `@gated("rerank")`：
+给可消融的 stage 套 `@gated("entail_review")`：
 
 * 开关开启 → 正常调用真实实现；
 * 开关关闭 → **不调用**真实实现（消融语义要求它缺席），并往当前 `SwitchTrace` 记一条
@@ -56,12 +56,12 @@ AblationSwitches.from_env()                                  # YUECESHAO_ABLATIO
 ```python
 from eval.gating import ablation_context, gated
 
-@gated("rerank", stage="retrieve.rerank")
-def rerank(candidates): ...
+@gated("entail_review", stage="llm.entail_review")
+def entail_review(candidates): ...
 
 with ablation_context(switches) as trace:
-    rerank(cands)          # 开关关闭时不会执行，且 trace 留痕
-assert trace.was_bypassed("rerank")
+    entail_review(cands)   # 开关关闭时不会执行，且 trace 留痕
+assert trace.was_bypassed("entail_review")
 ```
 
 这一点就是 PR1 的验收依据：测试同时断言「实现函数调用次数为 0」与「trace 里有记录」，
