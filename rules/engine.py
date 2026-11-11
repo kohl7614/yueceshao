@@ -100,9 +100,12 @@ class NegRuleMatcher:
             return True
         start = description.find(term)
         while start != -1:
-            window = description[
-                max(0, start - GENERIC_FRAME_WINDOW): start + len(term) + GENERIC_FRAME_WINDOW]
-            if any(frame in window for frame in VIOLATION_FRAME_TERMS):
+            left = max(0, start - GENERIC_FRAME_WINDOW)
+            window = description[left: start + len(term) + GENERIC_FRAME_WINDOW]
+            # 屏蔽术语自身：否则「基本支出」会用自己的「支出」充当违规语境词，
+            # 让合规表述「基本支出由财政保障」自我触发（2026-11-11 实测）。
+            masked = window[: start - left] + "＿" * len(term) + window[start - left + len(term):]
+            if any(frame in masked for frame in VIOLATION_FRAME_TERMS):
                 return True
             start = description.find(term, start + 1)
         return False
