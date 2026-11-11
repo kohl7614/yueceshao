@@ -210,7 +210,8 @@ def _anchor_store(clause_text: str, group_id: str) -> NegRuleMatcher:
 
 def test_insurance_strong_term_hits_descriptive_clause() -> None:
     """强词（多报投保面积）↔ 条款侧锚点（虚增保险标的）同组即命中。"""
-    matcher = _anchor_store("（一）虚构或者虚增保险标的，或者以同一保险标的进行多次投保。", "虚增与重复申报")
+    clause = "（一）虚构或者虚增保险标的，或者以同一保险标的进行多次投保。"
+    matcher = _anchor_store(clause, "虚增与重复申报")
     assert matcher.match("投保面积按1500亩报，实际约1200亩，多报投保面积以多领保费").hits
 
 
