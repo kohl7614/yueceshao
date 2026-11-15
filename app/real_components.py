@@ -219,6 +219,8 @@ def rule_orchestration_hit(
         "is_current": rule.is_effective,
         "serial": rule.doc_index,
         "category": rule.doc_category,
+        # 键名与 chunker 元数据一致（publish_date）；缺日期时渲染层诚实省略
+        "publish_date": rule.doc_date,
         "origin": origin,
     }
     return {"chunk_id": marker, "text": rule.clause_text, "metadata": metadata}

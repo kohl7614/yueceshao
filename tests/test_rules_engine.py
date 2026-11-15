@@ -113,7 +113,8 @@ def test_render_wording_discipline(matcher: NegRuleMatcher) -> None:
     assert "命中提示" in text and "建议对照原文" in text
     for banned in ("违规", "不合规", "可以申报", "合规"):
         assert banned not in text
-    assert "〔测试样例〕省A-002号二（省，有效）" in text  # 命中条款带层级与效力标注
+    # 命中条款带层级/效力/日期标注
+    assert "〔测试样例〕省A-002号二（省，有效，发布日期 2024-02-01）" in text
     assert "测试性楼堂馆所" in text        # 条款原文逐字展示
 
 

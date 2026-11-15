@@ -78,11 +78,12 @@ class ChunkMeta:
     citation_id: str          # [Cn] 标记本身，如 "[C1]"
     doc_no: str               # registry 文号（可能是占位串）
     clause_no: str            # 条款号（可为空串）
-    effective_date: str       # 生效/发布日期（渲染用）
+    effective_date: str       # 日期值（渲染用；数据侧现只采集发布日期）
     validity: str             # 效力状态：有效/待人工核验/已失效
     level: str                # 层级：国家/省/市/县…
     title: str                # registry 标题（无真文号时的退化引用源）
     is_current: bool          # 时效过滤布尔（loader 写入；缺失时按 validity 推断）
+    date_kind: str = ""       # 日期标签（生效日期/发布日期/空）——值随来源走，防误标
 
     # ---- has_doc_no 判据（与 retriever 同款三层：布尔字段 > 正则 > 占位拦截）----
     @property
@@ -112,13 +113,17 @@ class ChunkMeta:
             current = is_current
         else:
             current = validity in _VALID_CURRENT  # 缺失时按效力推断（保守）
+        # 日期：真生效日期字段优先；数据侧现只采集发布日期（registry 无生效日期
+        # 字段，chunker/rules 元数据里的都是发布日期），date_kind 如实标注来历，
+        # 渲染时不把发布日期冒充生效日期。数据侧补采生效日期后零改动自动切换。
+        eff_raw = metadata.get("effective_date") or metadata.get("生效日期")
+        pub_raw = metadata.get("publish_date") or metadata.get("发布日期")
         return cls(
             citation_id=citation_id,
             doc_no=doc_no,
             clause_no=str(metadata.get("clause_no") or metadata.get("条款号") or ""),
-            effective_date=str(
-                metadata.get("effective_date") or metadata.get("生效日期")
-                or metadata.get("发布日期") or ""),
+            effective_date=str(eff_raw or pub_raw or ""),
+            date_kind="生效日期" if eff_raw else ("发布日期" if pub_raw else ""),
             validity=validity,
             level=str(metadata.get("level") or metadata.get("层级") or ""),
             title=str(metadata.get("title") or metadata.get("标题") or ""),
@@ -151,7 +156,11 @@ def build_meta_table(hits: Iterable[Any]) -> dict[str, ChunkMeta]:
 # ---------------------------------------------------------------------------
 
 def format_reference(meta: ChunkMeta) -> str:
-    """引用行（人类可读）：有真文号用文号，无则退化标题——两者都是 registry 权威字段。"""
+    """引用行（人类可读）：有真文号用文号，无则退化标题——两者都是 registry 权威字段。
+
+    日期一并渲染（README 红线②要求引用带日期）：标签取 ``date_kind``，缺省
+    「日期」——只显示有据可查的日期，绝不凭空把发布日期说成生效日期。
+    """
     if meta.has_doc_no:
         head = meta.doc_no + (f" {meta.clause_no}" if meta.clause_no else "")
     else:
@@ -162,6 +171,8 @@ def format_reference(meta: ChunkMeta) -> str:
     if meta.level:
         bits.append(meta.level)
     bits.append(meta.validity or "时效不明")
+    if meta.effective_date:
+        bits.append(f"{meta.date_kind or '日期'} {meta.effective_date}")
     return "（".join([bits[0], "，".join(bits[1:]) + "）"]) if len(bits) > 1 else bits[0]
 
 

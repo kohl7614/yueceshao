@@ -49,6 +49,7 @@ def _meta(cid="[C1]", **over: Any) -> ChunkMeta:
         level="省",
         title="测试用涉农资金管理办法",
         is_current=True,
+        date_kind="发布日期",
     )
     base.update(over)
     return ChunkMeta(**base)
@@ -103,6 +104,16 @@ class TestChunkMeta:
             {"doc_no": "粤测农〔2099〕1号", "validity": "已失效"}, citation_id="[C8]")
         assert not m2.is_current
 
+    def test_date_provenance_labels(self) -> None:
+        """日期标签随来源走：真生效日期字段优先；发布日期兜底且如实标注。"""
+        m = ChunkMeta.from_mapping({"publish_date": "2024-02-01"}, citation_id="[C7]")
+        assert m.effective_date == "2024-02-01" and m.date_kind == "发布日期"
+        m2 = ChunkMeta.from_mapping(
+            {"生效日期": "2024-01-01", "publish_date": "2024-02-01"}, citation_id="[C6]")
+        assert m2.effective_date == "2024-01-01" and m2.date_kind == "生效日期"
+        m3 = ChunkMeta.from_mapping({"doc_no": "粤测农〔2099〕1号"}, citation_id="[C5]")
+        assert m3.effective_date == "" and m3.date_kind == ""
+
     def test_build_table_rejects_mapping_without_id(self) -> None:
         with pytest.raises(ChunkMetaImportError):
             build_meta_table([{"doc_no": "粤测农〔2099〕1号"}])
@@ -115,7 +126,7 @@ class TestChunkMeta:
 class TestFormatReference:
     def test_real_doc_no_format(self) -> None:
         s = format_reference(TABLE["[C1]"])
-        assert s == "粤测农〔2099〕1号 第四条（省，有效）"
+        assert s == "粤测农〔2099〕1号 第四条（省，有效，发布日期 2099-01-01）"
 
     def test_placeholder_degrades_to_title(self) -> None:
         """无真文号 → 退化用 registry 标题（权威字段，非编造）。"""
@@ -228,7 +239,7 @@ class TestRenderReport:
 
     def test_citation_resolved_into_reference(self) -> None:
         text = render_report(self._full_report(), TABLE)
-        assert "粤测农〔2099〕1号 第四条（省，有效）" in text
+        assert "粤测农〔2099〕1号 第四条（省，有效，发布日期 2099-01-01）" in text
         assert "[C1]" not in text  # 成品不残留原始标记
         assert "[C2]" not in text
 
