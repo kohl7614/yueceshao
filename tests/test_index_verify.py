@@ -47,8 +47,9 @@ READY = _index_ready()
 
 class TestRequiredFields:
     def test_complete_row_passes(self) -> None:
+        # 文号用〔2099〕人造样例（台账待办：测试内不出现真实文号，红线⑤⑥同理）。
         row = {
-            "doc_no": "粤财农〔2026〕100号",
+            "doc_no": "粤测农〔2099〕100号",
             "clause": "第四条",
             "validity": "有效",
             "is_current": True,
