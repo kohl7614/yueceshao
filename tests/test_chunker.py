@@ -494,7 +494,13 @@ def test_real_document_clause_alignment(serial: int) -> None:
     registry = DATA_REPO / "00_工作区" / "registry.json"
     result = load_registry(registry)
     doc = next(item for item in result.documents if item.serial == serial)
-    text = doc.resolve_clean_text(DATA_REPO).read_text(encoding="utf-8")
+    text_path = doc.resolve_clean_text(DATA_REPO)
+    if not text_path.is_file():
+        # 数据仓在但该篇清洗文本不在＝sparse checkout（本机 22% 检出）等部分克隆；
+        # 语料级两个测试对缺文件是逐篇容忍的，这里同样按「本机无此数据」跳过，
+        # 而不是抛 FileNotFoundError 让整场测试报红。
+        pytest.skip(f"本机数据仓未检出序号 {serial} 的清洗文本（sparse checkout），跳过")
+    text = text_path.read_text(encoding="utf-8")
 
     chunks = chunk_document(doc, text)
     assert chunks, "验收文件不应产出空结果"
