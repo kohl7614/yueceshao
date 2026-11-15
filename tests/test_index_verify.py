@@ -88,6 +88,10 @@ class TestAsInt:
         assert _as_int("") is None
         assert _as_int(None) is None
 
+    def test_unicode_superscript_digit_does_not_crash(self) -> None:
+        """「²」isdigit 为真但 int() 会炸——垫片必须挡住这类脏回读。"""
+        assert _as_int("²") is None
+
 
 class TestVerdict:
     def _result(self, **overrides) -> IndexVerification:
@@ -135,6 +139,12 @@ class TestVerdict:
     def test_scan_complete_passes(self) -> None:
         assert self._result(records_count=DEFAULT_EXPECTED_COUNT).ok is True
         assert self._result(records_count=None).scan_complete is True  # 未扫描不判
+
+    def test_summary_ends_with_conclusion_line(self) -> None:
+        """summary 必须以「结论：通过/失败」收尾——勾叉分散时防止误读整体。"""
+        assert self._result().summary().splitlines()[-1] == "结论：通过"
+        failed = self._result(audit_leaks=((162, "审计公告", "某公告"),))
+        assert failed.summary().splitlines()[-1] == "结论：失败"
 
 
 # ---------------------------------------------------------------------------

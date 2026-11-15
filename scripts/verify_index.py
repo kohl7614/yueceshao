@@ -105,6 +105,7 @@ class IndexVerification:
     def scan_complete(self) -> bool:
         """全量泄漏核对是否读满（未扫描不判；分页提前终止＝不完整）。"""
         return self.records_count is None or self.records_count == self.count
+
     @property
     def samples_ok(self) -> bool:
         """抽检块是否全部字段齐全。"""
@@ -155,6 +156,9 @@ class IndexVerification:
         else:
             lines.append("审计公告泄漏：0（loader 过滤口径核对）✓")
         lines.extend(f"提示：{warning}" for warning in self.warnings)
+        # 总结论行：勾/叉分散在各明细行，一眼看不见整体——特别是
+        # expected_count 未给且各项「真空通过」时，没有这行最容易误读成通过。
+        lines.append(f"结论：{'通过' if self.ok else '失败'}")
         return "\n".join(lines)
 
 
@@ -208,7 +212,8 @@ def _as_int(value: Any) -> int | None:
         return value
     if isinstance(value, str):
         stripped = value.strip()
-        return int(stripped) if stripped.isdigit() else None
+        # isdecimal 而非 isdigit：后者对「²」等上标数字也为真、int() 却会炸。
+        return int(stripped) if stripped.isdecimal() else None
     return None
 
 
