@@ -66,7 +66,8 @@ REQUIRED_METADATA: tuple[str, ...] = (
 )
 """验收用的必备元数据字段（抽检对照表）；与 chunker 的 ``as_metadata()`` 对齐。
 
-``publish_date`` 必须在列：报告②段要标注依据条款的生效日期，缺了它渲染层就只能留空。
+``publish_date`` 必须在列：报告②段要标注依据条款的日期（registry 现采集
+的是发布日期，渲染层以 date_kind 如实标注），缺了它渲染层就只能留空。
 """
 
 CONTENT_HASH_KEY = "content_hash"
