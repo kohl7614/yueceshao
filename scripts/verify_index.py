@@ -136,6 +136,10 @@ class IndexVerification:
             f"文档数（按序号去重）：{self.doc_count}",
             f"抽检 {len(self.samples)} 块元数据：{mark(self.samples_ok)}",
         ]
+        if self.count == 0:
+            # 空索引在块数行只显示「0 ✓」（未给期望时 count_ok 恒真），
+            # 这里点名失败原因，避免摘要看起来像通过。
+            lines.append("空索引：集合中没有任何块，抽检与泄漏核对均零覆盖，按失败处理 ✗")
         for sample in self.samples:
             if not sample.ok:
                 lines.append(f"  · {sample.chunk_id} 缺字段：{'、'.join(sample.missing)}")
