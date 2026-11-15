@@ -355,10 +355,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     if len(groups) > 1:
         _write_matrix(out_dir / "ablation_matrix.csv", groups)
 
+    pipeline_note = ""
+    if pipeline.name == "real":
+        # #76 后 real 管线默认装配 QwenLLM，key 缺失才退回 MockLLM——报告头必须如实
+        # 区分真数与假数，否则 mock 跑出的指标看起来和真跑一样（2026-11-11 实跑发现）。
+        backend = getattr(getattr(pipeline, "components", None), "llm_backend", "")
+        pipeline_note = (
+            "（真 LLM 已装配）"
+            if backend and backend != "MockLLM"
+            else "（LLM 退回 MockLLM，数字无实验意义；补配 key 后重跑）"
+        )
+
     print(
         "\n".join(
             [
-                f"pipeline : {pipeline.name}（占位管线，数字无实验意义；接真实管线后重跑）",
+                f"pipeline : {pipeline.name}{pipeline_note}",
                 f"cases    : {primary.summary.case_count} 条（limit={args.limit}）",
                 f"匹配率   : {_fmt(primary.summary.match_rate)}  线 {thresholds.match_rate:.0%}",
                 f"召回率   : {_fmt(primary.summary.recall)}  线 {thresholds.recall:.0%}",
