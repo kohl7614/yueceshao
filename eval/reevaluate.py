@@ -123,7 +123,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             metrics_path = dir_path / "metrics.json"
             if metrics_path.is_file():
                 meta = json.loads(metrics_path.read_text(encoding="utf-8"))
-                if not meta.get("registry_provided", False):
+                # 顶层不是对象（数组/标量＝拿错文件，如把 merge 产物当分片输入）
+                # 不能让 .get 抛未捕获 AttributeError，按「无法确认」保守记 N/A。
+                if not isinstance(meta, dict) or not meta.get("registry_provided", False):
                     registry_provided = False
             else:
                 registry_provided = False  # 无法确认 → 保守记 N/A
