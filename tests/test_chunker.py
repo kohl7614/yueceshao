@@ -534,15 +534,20 @@ def test_real_corpus_no_giant_chunks() -> None:
     result = load_registry(registry)
 
     offenders: list[tuple[int, int]] = []
+    examined = 0
     for doc in result.documents[:60]:  # 抽样 60 篇，兼顾速度
         path = doc.resolve_clean_text(DATA_REPO)
         if not path.is_file():
             continue
+        examined += 1
         chunks = chunk_document(doc, path.read_text(encoding="utf-8"))
         for chunk in chunks:
             if not chunk.is_appendix and chunk.char_count > 1200:
                 offenders.append((doc.serial, chunk.char_count))
 
+    if examined == 0:
+        # 一篇都没读到＝语料级抽查零覆盖，真空通过是假绿——显式跳过并说明。
+        pytest.skip("本机数据仓未检出任何清洗文本（sparse checkout），语料级抽查零覆盖")
     assert offenders == [], f"存在超长块（序号, 字数）：{offenders[:5]}"
 
 
@@ -559,6 +564,7 @@ def test_real_corpus_no_document_silently_yields_zero_chunks() -> None:
     result = load_registry(registry)
 
     offenders: list[int] = []
+    examined = 0
     for doc in result.documents:
         path = doc.resolve_clean_text(DATA_REPO)
         if not path.is_file():
@@ -566,9 +572,13 @@ def test_real_corpus_no_document_silently_yields_zero_chunks() -> None:
         text = path.read_text(encoding="utf-8")
         if not text.strip():
             continue
+        examined += 1
         if not chunk_document(doc, text):
             offenders.append(doc.serial)
 
+    if examined == 0:
+        # 同上：零覆盖真空通过是假绿，显式跳过并说明。
+        pytest.skip("本机数据仓未检出任何清洗文本（sparse checkout），语料级回归零覆盖")
     assert offenders == [], f"以下文档有正文却切出 0 块：{offenders}"
 
 
