@@ -16,6 +16,7 @@ from scripts.verify_index import (
     REQUIRED_METADATA,
     IndexVerification,
     SampleResult,
+    _as_int,
     check_required_fields,
     find_audit_leaks,
     verify_index,
@@ -75,6 +76,19 @@ class TestAuditLeaks:
         assert find_audit_leaks(records, {1, 3}) == ()
 
 
+class TestAsInt:
+    def test_int_and_numeric_string_pass(self) -> None:
+        assert _as_int(3) == 3
+        assert _as_int("42") == 42
+        assert _as_int(" 42 ") == 42
+
+    def test_bool_and_garbage_return_none(self) -> None:
+        assert _as_int(True) is None
+        assert _as_int("abc") is None
+        assert _as_int("") is None
+        assert _as_int(None) is None
+
+
 class TestVerdict:
     def _result(self, **overrides) -> IndexVerification:
         defaults: dict = {
@@ -103,6 +117,24 @@ class TestVerdict:
 
     def test_audit_leak_fails(self) -> None:
         assert self._result(audit_leaks=((162, "审计公告", "某公告"),)).ok is False
+
+    def test_empty_index_never_passes(self) -> None:
+        """空索引：抽检对空集真空通过、泄漏核对零覆盖——绝不能判绿（CodeRabbit #40 P2）。"""
+        empty = self._result(count=0, expected_count=None, samples=(), doc_count=0)
+        assert empty.count_ok is True        # 未给预期 → 不判
+        assert empty.samples_ok is True      # all(()) 真空通过——所以要靠 count>0 兜底
+        assert empty.ok is False
+
+    def test_scan_incomplete_fails(self) -> None:
+        """分页提前终止（读到的块数 < count）→ 泄漏核对未全覆盖，判失败。"""
+        partial = self._result(records_count=100)
+        assert partial.scan_complete is False
+        assert partial.ok is False
+        assert "泄漏核对未全覆盖" in partial.summary()
+
+    def test_scan_complete_passes(self) -> None:
+        assert self._result(records_count=DEFAULT_EXPECTED_COUNT).ok is True
+        assert self._result(records_count=None).scan_complete is True  # 未扫描不判
 
 
 # ---------------------------------------------------------------------------
