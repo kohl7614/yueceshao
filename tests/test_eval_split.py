@@ -91,3 +91,19 @@ def test_merge_missing_registry_reports_na_not_zero(tmp_path: Path) -> None:
     merge_main(["--inputs", str(directory), "--out", str(final)])
     merged = json.loads((final / "metrics.json").read_text(encoding="utf-8"))
     assert merged["metrics"]["citation_error_rate"] is None  # N/A，而非 0
+
+
+def test_merge_overlapping_shards_rejected(tmp_path: Path) -> None:
+    """分片区间重叠（同组同案例出现两次）→ 拒绝合并（退出码 2），不带病出数。
+
+    比率类指标的分子分母都按行数走：重复案例被静默双计则指标全歪。这是分发文档
+    「--offset/--limit 必须严格照表填，否则会重复/漏跑案例」的机械兜底。
+    """
+    cases = tmp_path / "cases.csv"
+    _write_cases(cases, 2)
+    out1 = tmp_path / "r1"
+    runner_main(["--cases", str(cases), "--pipeline", "null", "--out", str(out1)])
+    final = tmp_path / "final"
+    # 同一目录传两次＝区间完全重叠
+    assert merge_main(["--inputs", str(out1), str(out1), "--out", str(final)]) == 2
+    assert not (final / "metrics.json").exists()

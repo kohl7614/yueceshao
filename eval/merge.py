@@ -87,6 +87,25 @@ def _grouped(rows: Sequence[dict[str, str]]) -> dict[str, list[CaseOutcome]]:
     return {label: grouped[label] for label in order}
 
 
+def _intra_group_duplicates(
+    grouped: dict[str, list[CaseOutcome]],
+) -> list[str]:
+    """找出同组内重复出现的案例，返回 ``组/案例`` 清单（分片区间重叠的证据）。
+
+    比率类指标（匹配率/召回率/引用错误率）的分子分母都按行数走：同一案例在
+    同组被计入两次＝静默双计，指标全歪且无任何报错。分发文档要求 --offset/
+    --limit 严格照表填，这里做机械兜底——宁可拒并，不带病出数。
+    """
+    dupes: list[str] = []
+    for label, outcomes in grouped.items():
+        seen: set[str] = set()
+        for outcome in outcomes:
+            if outcome.case_id in seen:
+                dupes.append(f"{label}/{outcome.case_id}")
+            seen.add(outcome.case_id)
+    return dupes
+
+
 def _write_matrix(
     path: Path,
     labels: Sequence[str],
@@ -175,6 +194,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     grouped = _grouped(rows)
+    dupes = _intra_group_duplicates(grouped)
+    if dupes:
+        sample = ", ".join(dupes[:5])
+        print(
+            f"合并失败：同组内出现重复案例 {len(dupes)} 处（{sample}）"
+            "——分片区间重叠会让比率类指标被静默双计，请核对各分片 --offset/--limit。",
+            file=sys.stderr)
+        return 2
     labels = list(grouped)
     summaries = {
         label: summarize(outcomes, thresholds, registry_provided=registry_provided)
