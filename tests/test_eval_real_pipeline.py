@@ -124,3 +124,29 @@ class TestRealCheckupPipelineNoneConfig:
 
         rc.RealCheckupPipeline(None)
         assert captured["config_path"] == "/fake/config.json"
+
+
+class TestClauseNormalization:
+    """条款号为空时必须归一为规范名（2026-11-08 实跑发现：引用错误率 42.8% 的主因）。"""
+
+    def test_empty_clause_maps_to_canonical_label(self) -> None:
+        """索引里「未分条」正文块的 clause 元数据是空串，不能拼成 ``文号#``。"""
+        from eval.real_pipeline import CLAUSE_UNNUMBERED, _raw_clause
+
+        assert _raw_clause("") == CLAUSE_UNNUMBERED == "未分条（原文无条款号）"
+        assert _raw_clause(None or "") == CLAUSE_UNNUMBERED
+
+    def test_numbered_clause_unchanged(self) -> None:
+        """有条款号时行为不变（回归保护）。"""
+        from eval.real_pipeline import _raw_clause
+
+        assert _raw_clause("第四条") == "四"
+        assert _raw_clause("十八") == "十八"
+
+    def test_unnumbered_ref_is_verifiable(self) -> None:
+        """``文号#未分条（原文无条款号）`` 必须落在 registry 的规范键形态上。"""
+        from eval.dataset import normalize_ref
+        from eval.real_pipeline import _raw_clause
+
+        ref = normalize_ref("粤测农〔2099〕1号", _raw_clause(""))
+        assert ref == "粤测农〔2099〕1号#未分条（原文无条款号）"
