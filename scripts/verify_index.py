@@ -93,11 +93,18 @@ class IndexVerification:
     doc_count: int
     audit_leaks: tuple[tuple[int, str, str], ...]
     warnings: tuple[str, ...] = ()
+    records_count: int | None = None
+    """分页扫描实际读到的块数；None＝未扫描（不判）。与 count 不齐＝泄漏核对只覆盖了一部分。"""
 
     @property
     def count_ok(self) -> bool:
         """块数是否符合预期（未给预期时不判）。"""
         return self.expected_count is None or self.count == self.expected_count
+
+    @property
+    def scan_complete(self) -> bool:
+        """全量泄漏核对是否读满（未扫描不判；分页提前终止＝不完整）。"""
+        return self.records_count is None or self.records_count == self.count
 
     @property
     def samples_ok(self) -> bool:
@@ -106,8 +113,18 @@ class IndexVerification:
 
     @property
     def ok(self) -> bool:
-        """三项验收全部通过。"""
-        return self.count_ok and self.samples_ok and not self.audit_leaks
+        """验收全部通过。
+
+        空索引（count==0）与扫描不完整（records_count≠count）都算失败——
+        抽检对空集真空通过、泄漏核对只覆盖部分块，都是 CodeRabbit #40 指出的假绿。
+        """
+        return (
+            self.count > 0
+            and self.count_ok
+            and self.samples_ok
+            and not self.audit_leaks
+            and self.scan_complete
+        )
 
     def summary(self) -> str:
         """多行结论（CLI 输出与 PR 评论直接使用）。"""
@@ -120,9 +137,16 @@ class IndexVerification:
             f"文档数（按序号去重）：{self.doc_count}",
             f"抽检 {len(self.samples)} 块元数据：{mark(self.samples_ok)}",
         ]
+        if self.count == 0:
+            # 空索引在块数行只显示「0 ✓」（未给期望时 count_ok 恒真），
+            # 这里点名失败原因，避免摘要看起来像通过。
+            lines.append("空索引：集合中没有任何块，抽检与泄漏核对均零覆盖，按失败处理 ✗")
         for sample in self.samples:
             if not sample.ok:
                 lines.append(f"  · {sample.chunk_id} 缺字段：{'、'.join(sample.missing)}")
+        if self.records_count is not None and not self.scan_complete:
+            lines.append(
+                f"扫描块数：{self.records_count}（≠ 集合 count {self.count}，泄漏核对未全覆盖）✗")
         if self.audit_leaks:
             lines.append(f"审计公告泄漏：{len(self.audit_leaks)} 处 ✗")
             lines.extend(
@@ -132,6 +156,9 @@ class IndexVerification:
         else:
             lines.append("审计公告泄漏：0（loader 过滤口径核对）✓")
         lines.extend(f"提示：{warning}" for warning in self.warnings)
+        # 总结论行：勾/叉分散在各明细行，一眼看不见整体——特别是
+        # expected_count 未给且各项「真空通过」时，没有这行最容易误读成通过。
+        lines.append(f"结论：{'通过' if self.ok else '失败'}")
         return "\n".join(lines)
 
 
@@ -174,10 +201,20 @@ def find_audit_leaks(
 
 
 def _as_int(value: Any) -> int | None:
-    """元数据值转 int；bool/非数字返回 None（避免 True 被当成 1）。"""
-    if isinstance(value, bool) or not isinstance(value, int):
+    """元数据值转 int；bool/非数字返回 None（避免 True 被当成 1）。
+
+    chroma 元数据跨版本/跨端读写可能把数值回成字符串：十进制数字串按 int
+    处理（否则每个块的序号都解析失败、被当成「不在保留集合」误报泄漏）。
+    """
+    if isinstance(value, bool):
         return None
-    return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        # isdecimal 而非 isdigit：后者对「²」等上标数字也为真、int() 却会炸。
+        return int(stripped) if stripped.isdecimal() else None
+    return None
 
 
 def scan_block_records(collection: Any, page_size: int = PAGE_SIZE) -> list[tuple[int, str, str]]:
@@ -286,6 +323,11 @@ def verify_index(
                 SampleResult(str(chunk_id), check_required_fields(dict(metadata or {}))))
 
     records = scan_block_records(collection)
+    records_count = len(records)
+    if records_count != count:
+        warnings.append(
+            f"分页扫描读到 {records_count} 块 ≠ 集合 count {count}："
+            "泄漏核对未全覆盖（chroma 分页异常或版本限制），结论按失败处理")
     doc_count = len({serial for serial, _category, _title in records if serial >= 0})
 
     audit_leaks: tuple[tuple[int, str, str], ...] = ()
@@ -313,6 +355,7 @@ def verify_index(
         doc_count=doc_count,
         audit_leaks=audit_leaks,
         warnings=tuple(warnings),
+        records_count=records_count,
     )
     logger.info("索引验证结论\n%s", result.summary())
     return result
