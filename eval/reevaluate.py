@@ -27,8 +27,13 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
-from eval.dataset import EvalCase, load_cases
-from eval.merge import _read_group_details, _row_to_outcome, _write_matrix
+from eval.dataset import DatasetError, EvalCase, load_cases
+from eval.merge import (
+    _intra_group_duplicates,
+    _read_group_details,
+    _row_to_outcome,
+    _write_matrix,
+)
 from eval.metrics import CaseOutcome, EvalThresholds, summarize
 
 __all__ = ["main"]
@@ -99,12 +104,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         citation_error_rate=args.citation_error_threshold,
     )
 
-    new_cases: dict[str, EvalCase] = {c.case_id: c for c in load_cases(args.cases)}
+    try:
+        new_cases: dict[str, EvalCase] = {
+            c.case_id: c for c in load_cases(args.cases)}
+    except DatasetError as exc:
+        print(f"重算失败：{exc}", file=sys.stderr)
+        return 2
+
     rows: list[dict[str, str]] = []
+    # registry 口径与 merge 同款（#70 终审教训）：读各分片 metrics.json 的
+    # registry_provided，任何一片没带 registry → 引用错误率整体记 N/A，
+    # 绝不拿 citations_bad=0 误报成 0%。
+    registry_provided = True
     try:
         for directory in args.inputs:
-            rows.extend(_read_group_details(Path(directory)))
-    except FileNotFoundError as exc:
+            dir_path = Path(directory)
+            rows.extend(_read_group_details(dir_path))
+            metrics_path = dir_path / "metrics.json"
+            if metrics_path.is_file():
+                meta = json.loads(metrics_path.read_text(encoding="utf-8"))
+                # 顶层不是对象（数组/标量＝拿错文件，如把 merge 产物当分片输入）
+                # 不能让 .get 抛未捕获 AttributeError，按「无法确认」保守记 N/A。
+                if not isinstance(meta, dict) or not meta.get("registry_provided", False):
+                    registry_provided = False
+            else:
+                registry_provided = False  # 无法确认 → 保守记 N/A
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
         print(f"重算失败：{exc}", file=sys.stderr)
         return 2
 
@@ -127,9 +152,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("重算失败：没有可重算的预测数据。", file=sys.stderr)
         return 2
 
+    # 分片区间重叠＝同一案例被静默双计（与 merge 同款机械兜底，宁可拒算）。
+    dupes = _intra_group_duplicates(grouped)
+    if dupes:
+        sample = ", ".join(dupes[:5])
+        print(
+            f"重算失败：同组内出现重复案例 {len(dupes)} 处（{sample}）"
+            "——分片区间重叠会让比率类指标被静默双计，请核对各分片 --offset/--limit。",
+            file=sys.stderr)
+        return 2
+
     labels = list(order)
     summaries = {
-        label: summarize(outcomes, thresholds, registry_provided=True)
+        label: summarize(outcomes, thresholds, registry_provided=registry_provided)
         for label, outcomes in grouped.items()
     }
     primary = summaries[labels[0]]
