@@ -494,7 +494,15 @@ def test_real_document_clause_alignment(serial: int) -> None:
     registry = DATA_REPO / "00_工作区" / "registry.json"
     result = load_registry(registry)
     doc = next(item for item in result.documents if item.serial == serial)
-    text = doc.resolve_clean_text(DATA_REPO).read_text(encoding="utf-8")
+    text_path = doc.resolve_clean_text(DATA_REPO)
+    if not text_path.is_file():
+        # 数据仓在但该篇清洗文本不在＝sparse checkout（本机 22% 检出）等部分克隆；
+        # 语料级两个测试对缺文件是逐篇容忍的，这里同样按「本机无此数据」跳过，
+        # 而不是抛 FileNotFoundError 让整场测试报红。
+        pytest.skip(
+            f"本机数据仓未检出序号 {serial} 的清洗文本（sparse checkout）。"
+            "恢复验收：在数据仓执行 git sparse-checkout add 03_清洗文本")
+    text = text_path.read_text(encoding="utf-8")
 
     chunks = chunk_document(doc, text)
     assert chunks, "验收文件不应产出空结果"
@@ -526,15 +534,20 @@ def test_real_corpus_no_giant_chunks() -> None:
     result = load_registry(registry)
 
     offenders: list[tuple[int, int]] = []
+    examined = 0
     for doc in result.documents[:60]:  # 抽样 60 篇，兼顾速度
         path = doc.resolve_clean_text(DATA_REPO)
         if not path.is_file():
             continue
+        examined += 1
         chunks = chunk_document(doc, path.read_text(encoding="utf-8"))
         for chunk in chunks:
             if not chunk.is_appendix and chunk.char_count > 1200:
                 offenders.append((doc.serial, chunk.char_count))
 
+    if examined == 0:
+        # 一篇都没读到＝语料级抽查零覆盖，真空通过是假绿——显式跳过并说明。
+        pytest.skip("本机数据仓未检出任何清洗文本（sparse checkout），语料级抽查零覆盖")
     assert offenders == [], f"存在超长块（序号, 字数）：{offenders[:5]}"
 
 
@@ -551,6 +564,7 @@ def test_real_corpus_no_document_silently_yields_zero_chunks() -> None:
     result = load_registry(registry)
 
     offenders: list[int] = []
+    examined = 0
     for doc in result.documents:
         path = doc.resolve_clean_text(DATA_REPO)
         if not path.is_file():
@@ -558,9 +572,13 @@ def test_real_corpus_no_document_silently_yields_zero_chunks() -> None:
         text = path.read_text(encoding="utf-8")
         if not text.strip():
             continue
+        examined += 1
         if not chunk_document(doc, text):
             offenders.append(doc.serial)
 
+    if examined == 0:
+        # 同上：零覆盖真空通过是假绿，显式跳过并说明。
+        pytest.skip("本机数据仓未检出任何清洗文本（sparse checkout），语料级回归零覆盖")
     assert offenders == [], f"以下文档有正文却切出 0 块：{offenders}"
 
 
