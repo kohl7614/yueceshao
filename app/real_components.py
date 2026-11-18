@@ -502,6 +502,8 @@ class RealComponents:
         self._config_path = Path(config_path)
         self._config = _load_config(self._config_path)
         self._llm = llm if llm is not None else MockLLM()
+        # 「QwenLLM」或「MockLLM」——runner 据此输出诚实的 pipeline 文案（勿删）。
+        self.llm_backend = type(self._llm).__name__
         self._plans: dict[str, RetrievalPlan] = {}
         # 图的 retrieve 与 rule_scan 两个分支是**并发执行**的（LangGraph 线程池）。
         # 没有这把锁时两路会各自算一遍命中计划：既重复跑一次模型编码，
