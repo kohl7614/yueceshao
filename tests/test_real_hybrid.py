@@ -138,3 +138,80 @@ def test_injected_sparse_reused() -> None:
     # 兜底冒烟：EvalCase→查询路径的文本契约（query 非 None）
     case = EvalCase(case_id="T1", query="烘干设施")
     assert case.query
+
+
+# ==================== A7 质量门接线 ====================
+
+class _FakeGate:
+    """门控替身：构造时给定 passed，记录收到的候选数。"""
+
+    def __init__(self, passed: bool) -> None:
+        self.passed = passed
+        self.seen_candidates: list[int] = []
+        self.reason = "test"
+        self.tau = 0.55
+        self.top_score = 0.9 if passed else 0.1
+
+    def evaluate(self, result) -> SimpleNamespace:
+        self.seen_candidates.append(len(result.hits))
+        return SimpleNamespace(passed=self.passed, reason=self.reason,
+                               tau=self.tau, top_score=self.top_score)
+
+
+class _FakeGateRunner:
+    """GateRunner 替身：fetch(n) 收 n 条候选，按 passed 决定门控结果。"""
+
+    def __init__(self, passed: bool) -> None:
+        self._passed = passed
+        self.gate = _FakeGate(passed)
+        self.requested = None  # fetch 被请求的候选数
+
+    def run(self, query: str, fetch, top_k=None):
+        self.requested = 3
+        hits = fetch(self.requested)
+        gate = self.gate.evaluate(SimpleNamespace(hits=hits))
+        # 真契约：GateRunner 返回的 hits 是 RerankedHit（适配层读 .hit 取原命中）
+        ranked = [SimpleNamespace(hit=h) for h in hits]
+        return SimpleNamespace(hits=ranked, gate=gate)
+
+
+def test_gate_pass_returns_reranked_hits() -> None:
+    """门过 → 命中为重排后的 hit（fetch 候选数正确）。"""
+    adapter = _hybrid()
+    runner = _FakeGateRunner(passed=True)
+    adapter._gate_runner = runner
+    result = adapter.retrieve("烘干设施建设的申报条件")
+    # fetch 被请求 3 条候选；融合并集不足 3 时按实际并集数返回（上限语义）
+    assert runner.requested == 3
+    assert len(runner.gate.seen_candidates) == 1
+    assert 0 < runner.gate.seen_candidates[0] <= 3
+    assert result.hits and all(isinstance(h, Hit) for h in result.hits)
+
+
+def test_gate_fail_degrades_to_uncovered() -> None:
+    """τ 门不过 → A11 诚实降级：空命中（①段渲染为未覆盖），绝不输出低置信候选。"""
+    adapter = _hybrid()
+    adapter._gate_runner = _FakeGateRunner(passed=False)
+    result = adapter.retrieve("烘干设施建设的申报条件")
+    assert result.hits == []
+
+
+def test_rebuild_carries_gate_runner() -> None:
+    """时效消融变体继承同一份门控（重排模型只加载一次）。"""
+    adapter = _hybrid()
+    runner = _FakeGateRunner(passed=True)
+    adapter._gate_runner = runner
+    plain = adapter.rebuild(temporal=False)
+    assert plain._gate_runner is runner
+
+
+def test_build_gate_runner_section_rules() -> None:
+    """无 reranker 段 / enable_gate=false → None（纯 A5 路径）；有段则装配门控。"""
+    from app.real_components import _build_gate_runner
+    assert _build_gate_runner({"retrieval": {}}) is None
+    assert _build_gate_runner(
+        {"reranker": {"enable_gate": False, "tau": 0.55}}) is None
+    runner = _build_gate_runner(
+        {"reranker": {"enable_gate": True, "tau": 0.55,
+                      "model_dir": "models/bge-reranker-v2-m3"}})
+    assert runner is not None  # 懒加载：构造不触发模型下载/加载
