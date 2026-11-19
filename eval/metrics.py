@@ -187,7 +187,18 @@ def _scan_forbidden(text: str) -> tuple[str, ...]:
     # 那是语料本身而非系统措辞——姿态禁语只约束系统自己的结论（预审与真数据首跑发现）。
     segments = re.split(r"条款原文[：:]", body)
     outside_clauses = "".join(segments[::2])  # 奇数段为原文引文，扫描偶数段（系统措辞）
-    return tuple(phrase for phrase in FORBIDDEN_PHRASES if phrase in outside_clauses)
+    # 体检输入回显段豁免：报告开头的「体检输入：…」逐字回显申报人描述（全量四分片
+    # 首跑 2026-11-19 发现两类误伤——C75 输入「是否符合规定」的子串含「合规」、
+    # C144 输入「现场核查确认合规」），那是申报人的话而非系统结论，与条款原文同性质。
+    outside_clauses = re.sub(r"体检输入：.*?(?=\n\s*\n|\n[①②③④]|$)", "", outside_clauses,
+                             flags=re.DOTALL)
+    # 「符合规定」的子串含「合规」——申报人/建议段常说的中性短语不构成姿态结论，
+    # 用否定回望豁免；「项目合规」「确认合规」等系统侧表述仍照常命中。
+    return tuple(
+        phrase for phrase in FORBIDDEN_PHRASES
+        if (re.search(r"(?<!符)合规", outside_clauses) if phrase == "合规"
+           else phrase in outside_clauses)
+    )
 
 
 def evaluate_case(
