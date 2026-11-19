@@ -156,7 +156,6 @@ class TestVintageFingerprintGuard:
             "案例编号,改编后申报场景描述_体检输入,预期命中预警,历史适用条款_文号及条款号\n"
             "T1,拟用资金建设楼堂馆所,应命中,粤测农〔2099〕1号#4\n",
             encoding="utf-8-sig")
-        payload = {"cases_file": str(cases)}
         import hashlib
         expect = hashlib.sha256(cases.read_bytes()).hexdigest()[:16]
         # 直接验证指纹函数语义：与 runner 写入口径一致（前16位sha256）
