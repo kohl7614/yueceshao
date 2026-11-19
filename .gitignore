@@ -33,3 +33,8 @@ dist/
 # 评测跑批产物与本地消融配置（只提交 .example）
 runs/
 eval/ablation.json
+
+# AI 助手工作产物（协作规范 §7：辅助产物永不进提交）
+.impeccable/
+.zcode/
+.nightshift/
