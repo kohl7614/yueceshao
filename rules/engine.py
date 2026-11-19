@@ -150,19 +150,26 @@ class NegRuleMatcher:
 def render_hits(result: MatchResult) -> list[str]:
     """渲染命中提示文案（只作提示，不判定——姿态红线）。
 
-    每条命中输出：文号+条款号（层级/效力标注）｜命中词（描述侧↔条款侧，概念组）｜
-    条款原文｜等价组对照。无命中时返回中性提示。
+    每条命中输出：文号+条款号（层级/效力/发布日期标注）｜命中词（描述侧↔条款侧，
+    概念组）｜条款原文｜等价组对照。无命中时返回中性提示。
     """
     if not result.hits:
         return ["未识别到禁止用途词，暂无命中提示。"]
+
+    def _date_note(doc_date: str) -> str:
+        # 引用标注带日期（README 功能表·②段）：数据侧现只采集发布日期
+        # （无真正效日期字段），按实情标注「发布日期」，缺日期则不标注。
+        return f"，发布日期 {doc_date}" if doc_date else ""
+
     lines: list[str] = []
     for hit in result.hits:
         rule = hit.rule
         peers = "；".join(
-            f"{p.doc_no} {p.clause_no}（{p.level}，{p.effect_status}）" for p in hit.group_peers
+            f"{p.doc_no} {p.clause_no}（{p.level}，{p.effect_status}{_date_note(p.doc_date)}）"
+            for p in hit.group_peers
         ) or "无"
         lines.append(
-            f"命中提示（建议对照原文）｜{rule.doc_no}{rule.clause_no}（{rule.level}，{rule.effect_status}）｜"
+            f"命中提示（建议对照原文）｜{rule.doc_no}{rule.clause_no}（{rule.level}，{rule.effect_status}{_date_note(rule.doc_date)}）｜"
             f"命中词：描述侧「{'、'.join(hit.matched_description_terms)}」"
             f"↔ 条款侧「{'、'.join(hit.matched_terms)}」（概念：{hit.concept}）｜"
             f"条款原文：{rule.clause_text}｜"
