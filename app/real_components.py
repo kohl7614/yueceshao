@@ -546,9 +546,12 @@ class RealComponents:
             stage="entail.review", source=self._ablation_source)(self._entail_impl)
 
     def _build_plain_retriever(self, retriever_plain: Any) -> Any:
-        """无时效过滤的检索器变体：注入优先；真实检索器带 config 时自动构造。"""
+        """无时效过滤的检索器变体：注入优先；混合检索器共享 BM25 索引重建。"""
         if retriever_plain is not None:
             return retriever_plain
+        if isinstance(self._retriever, _HybridPipelineRetriever):
+            # A5：时效消融变体复用同一份 BM25 索引（重建只换配置，不二次分词）。
+            return self._retriever.rebuild(temporal=False)
         base_config = getattr(self._retriever, "config", None)
         if base_config is None or not hasattr(base_config, "enable_temporal_filter"):
             return self._retriever  # 注入的假检索器无配置：复用同对象（行为不变）
@@ -842,11 +845,94 @@ class RealCheckupPipeline:
 # ================================================================ 装配辅助
 
 
-def _build_retriever(config: Mapping[str, Any]) -> Any:
-    """按配置装配真实 DenseRetriever（局部 import：不装 torch 也能 import 本模块）。"""
+class _HybridPipelineRetriever:
+    """HybridRetriever → 管线检索契约适配（A5）。
+
+    管线下游只认 ``retrieve(query) → RetrievalResult`` 与 ``backend.count()``；
+    融合命中透传 :attr:`~rag.hybrid.FusedHit.hit`（chunk_id/metadata/text 契约
+    不变），下游零改动。时效消融变体经 :meth:`rebuild` 共享同一份 BM25 索引
+    （重建只换配置，不重复全量分词）。
+    """
+
+    def __init__(
+        self, hybrid: Any, source_config: Mapping[str, Any], sparse: Any
+    ) -> None:
+        self._hybrid = hybrid
+        self.source_config = source_config
+        self._sparse = sparse
+
+    @property
+    def backend(self) -> Any:
+        """稠密一路的 Chroma 后端（_safe_count 读集合块数用）。"""
+        return getattr(self._hybrid.dense, "backend", None)
+
+    def rebuild(self, *, temporal: bool) -> _HybridPipelineRetriever:
+        """以另一档时效开关重建变体（复用 BM25 索引与稠密后端存储）。"""
+        return _build_hybrid(self.source_config, temporal=temporal, sparse=self._sparse)
+
+    def retrieve(self, query: str) -> Any:
+        if not query:
+            return RetrievalResult(query="", hits=[])
+        result = self._hybrid.retrieve(query)
+        # 时效语义如实合成：hybrid 把时效按路内部应用（掩码），HybridResult.where
+        # 不携带——这里按 HybridResult.temporal_filtered 合成出等价的 where，
+        # 让 RetrievalResult.summary() 的「时效过滤已开/已关」标签与实际一致。
+        temporal = bool(getattr(result, "temporal_filtered", False))
+        where = {"is_current": True} if temporal else {}
+        return RetrievalResult(
+            query=result.query,
+            hits=[fused.hit for fused in result.hits],
+            where=where,
+        )
+
+
+def _with_temporal(config: Mapping[str, Any], temporal: bool) -> dict[str, Any]:
+    """把时效开关同时落到 retrieval 与 hybrid 两段。
+
+    两处开关不一致会让消融出现「稀疏侧放开了、稠密侧还锁着」的假对照
+    （rag/hybrid.py 的 _sync_dense_temporal 会兜底对齐，这里从源头就写对）。
+    """
+    cfg = {**dict(config or {})}
+    cfg["retrieval"] = {
+        **(cfg.get("retrieval") or {}), "enable_temporal_filter": temporal}
+    cfg["hybrid"] = {
+        **(cfg.get("hybrid") or {}), "enable_temporal_filter": temporal}
+    return cfg
+
+
+def _build_hybrid(
+    config: Mapping[str, Any],
+    *,
+    temporal: bool = True,
+    sparse: Any = None,
+    dense: Any = None,
+) -> _HybridPipelineRetriever:
+    """装配 A5 混合检索（BM25＋稠密 RRF），适配为管线检索契约。
+
+    BM25 语料直接取自 Chroma 已入库块（与稠密一路共用同一份存储，候选池
+    严格一致——重新分块会引入与索引不同步的漂移）；BM25 索引构建一次，
+    时效消融变体共享（省去二次全量分词）。``dense`` 为测试注入点。
+    """
+    from rag.hybrid import BM25Index, HybridConfig, HybridRetriever
     from rag.retriever import build_retriever
 
-    return build_retriever(config)
+    cfg = _with_temporal(config, temporal)
+    dense = dense if dense is not None else build_retriever(cfg)
+    backend = getattr(dense, "backend", None)
+    total = backend.count() if hasattr(backend, "count") else -1
+    if total == 0:
+        raise RealAdapterError(
+            "检索集合为空：persist_dir 可能指错目录（Chroma 会自动建空集合、"
+            "count 读成 0，不报错）。请先用 scripts/verify_index.py 核对索引。")
+    if sparse is None:
+        sparse = BM25Index(backend.iter_corpus_records())
+    hybrid = HybridRetriever(dense, sparse, HybridConfig.from_config(cfg))
+    return _HybridPipelineRetriever(hybrid, config, sparse)
+
+
+def _build_retriever(config: Mapping[str, Any]) -> Any:
+    """装配检索阶段（A5：BM25＋稠密 RRF 混合，输出 Hit 契约不变）。"""
+    return _build_hybrid(config, temporal=True)
 
 
 def _build_matcher(config_path: Path) -> NegRuleMatcher:
