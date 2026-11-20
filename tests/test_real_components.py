@@ -184,6 +184,7 @@ class TestHitMapping:
         assert meta["clause_no"] == "第四条"
         assert meta["validity"] == "有效"
         assert meta["level"] == "省"
+        assert meta["publish_date"] == "2099-01-01"  # 日期随溯源字段过渲染层（红线②）
         assert mapped["text"] == "帮扶资金不得用于购置公务用车。"
 
 

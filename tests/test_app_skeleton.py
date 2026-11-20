@@ -66,7 +66,7 @@ def test_checkup_end_to_end_returns_four_sections() -> None:
     assert item["confidence"] == "明确适用"
     assert item["citation"] == "[C1]"          # 结构化层保留标记
     assert "[C1]" not in body["rendered_text"]  # 文本层已解析为引用行
-    assert "粤测农〔2099〕1号 第四条（省，有效）" in body["rendered_text"]
+    assert "粤测农〔2099〕1号 第四条（省，有效，生效日期 2099-01-01）" in body["rendered_text"]
 
 
 def test_response_schema_fields_complete() -> None:
