@@ -169,6 +169,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     rows: list[dict[str, str]] = []
     registry_provided = True
+    fingerprints: dict[str, str] = {}  # 分片目录 → 标注指纹（缺失记 "unknown"）
     try:
         for directory in args.inputs:
             dir_path = Path(directory)
@@ -185,14 +186,34 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # 不能让 .get 抛未捕获 AttributeError，按「无法确认」保守记 N/A。
                 if not isinstance(meta, dict) or not meta.get("registry_provided", False):
                     registry_provided = False
+                # 标注 vintage 指纹：各分片必须同一版本标注表跑批——expected 侧
+                # 口径不一致时合并出的指标是混合口径（2026-11-19 实测：一片旧标注
+                # 压低匹配率 5pp）。老产物无指纹字段记 "unknown"，仅在出现两种以上
+                # 不同值时拒并（全 unknown 不拦，保持对历史产物的兼容）。
+                if isinstance(meta, dict):
+                    fingerprints[str(directory)] = str(
+                        meta.get("cases_fingerprint") or "unknown")
+                else:
+                    fingerprints[str(directory)] = "unknown"
             else:
                 registry_provided = False  # 无法确认 → 保守记 N/A
+                fingerprints[str(directory)] = "unknown"
     except (FileNotFoundError, json.JSONDecodeError) as exc:
         print(f"合并失败：{exc}", file=sys.stderr)
         return 2
 
     if not rows:
         print("合并失败：没有任何逐案例数据。", file=sys.stderr)
+        return 2
+
+    distinct = {v for v in fingerprints.values() if v != "unknown"}
+    if len(distinct) > 1:
+        detail = "; ".join(sorted(f"{k}: {v[:8]}" for k, v in fingerprints.items()))
+        print(
+            f"合并失败：各分片标注 vintage 不一致（{detail}）——"
+            "expected 侧口径混版会让指标失真，请统一标注表后重跑不一致的分片"
+            "（或对全部分片用同一份定稿标注跑 eval.reevaluate）。",
+            file=sys.stderr)
         return 2
 
     grouped = _grouped(rows)

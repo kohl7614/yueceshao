@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import logging
 import sys
@@ -336,6 +337,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "pipeline": pipeline.name,
         "cases_file": str(Path(args.cases).resolve()),
+        # 标注 vintage 指纹（sha256 前 16 位）：merge 据此拒绝混版合并——
+        # 四分片各用不同版本标注表跑批时，expected 侧口径不一致，合并出的
+        # 指标是混合口径（2026-11-19 全量首跑实测：magic42 片用了旧标注，
+        # 匹配率被压低 5pp，reevaluate 才纠回）。
+        "cases_fingerprint": hashlib.sha256(
+            Path(args.cases).read_bytes()).hexdigest()[:16],
         "case_limit": args.limit,
         "case_offset": args.offset,
         "registry_provided": registry is not None,
