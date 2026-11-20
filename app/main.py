@@ -92,10 +92,14 @@ class CheckupResponse(BaseModel):
     disclaimer: str
 
 
+class _SentinelFailure(RuntimeError):
+    """免责声明哨兵复核失败（消息即安全文案，可原样进 failed.error）。"""
+
+
 def _execute_checkup(pipe: CheckupPipeline, description: str) -> dict:
     """跑一次体检并构造结果 payload（worker 线程内执行；免责声明哨兵复核）。
 
-    失败一律转成携带**安全文案**的 RuntimeError——TaskStore 把异常消息存进
+    失败一律转成携带**安全文案**的异常——TaskStore 把异常消息存进
     failed.error 返回给客户端，内部细节（路径/堆栈/key）只落服务端日志。
     整个构造过程包在 try 内：管线违约（如字段类型不符）也不裸传异常原文。
     """
@@ -103,7 +107,7 @@ def _execute_checkup(pipe: CheckupPipeline, description: str) -> dict:
         result: PipelineResult = pipe.run(description)
         if DISCLAIMER_SENTINEL not in result.rendered_text:
             logger.error("管线产物缺少免责声明，任务转失败")
-            raise RuntimeError(_SENTINEL_FAILURE)
+            raise _SentinelFailure(_SENTINEL_FAILURE)
         return CheckupResponse(
             pipeline=pipe.name,
             report=result.to_api_dict()["report"],
@@ -113,8 +117,8 @@ def _execute_checkup(pipe: CheckupPipeline, description: str) -> dict:
             failed_sections=list(result.failed_sections),
             disclaimer=result.disclaimer,
         ).model_dump()
-    except RuntimeError:
-        raise  # 安全文案（含上面的哨兵失败）原样上抛
+    except _SentinelFailure:
+        raise  # 消息即安全文案，原样上抛
     except Exception:  # noqa: BLE001 —— 客户端只见安全文案（原同步 500 的 detail 口径）
         logger.exception("体检管线执行失败")
         raise RuntimeError(_GENERIC_FAILURE) from None
