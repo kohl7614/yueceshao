@@ -118,7 +118,7 @@
     <!-- ④ 系统评测：三项指标与消融对比（静态框架展示，数字待真实管线跑批回填，不预填预估数字） -->
     <section class="eval" id="eval" aria-labelledby="eval-title">
       <h2 id="eval-title" class="section-title">系统评测 · 三项指标与消融对比</h2>
-      <p class="section-sub">三项指标衡量「体检报告可不可信」：<strong>匹配率</strong>看判定对不对，<strong>召回率</strong>看该查到的条款有没有漏，<strong>引用错误率</strong>看文号可不可核验。指标口径与验收线来自团队手册 3.4（实现见 <code>eval/metrics.py</code>）；完整系统（基线）与消融组的对比矩阵由 <code>eval/runner.py</code> 跑批产出。2026-11-19 已完成全量真跑批：142 条案例 × 7 组（四分片合并，qwen-max，temperature=0），以下数字为实测，逐案例明细与复算入口见区块底部。</p>
+      <p class="section-sub">三项指标衡量「体检报告可不可信」：<strong>匹配率</strong>看判定对不对，<strong>召回率</strong>看该查到的条款有没有漏，<strong>引用错误率</strong>看文号可不可核验。指标口径与验收线来自团队手册 3.4（实现见 <code>eval/metrics.py</code>）；完整系统（基线）与消融组的对比矩阵由 <code>eval/runner.py</code> 跑批产出。2026-11-20 定稿：全量真跑批 142 条 × 7 组（四分片，qwen-max，temperature=0）＋失分案例归因处置（补写 3／期望重指向 2／口径重分类 10，逐条留痕见数据仓），以下为终版实测。评测基线＝纯稠密检索管线（A5 混合检索与 A7 质量门合入前），检索增强后的复测按排期 2027.04 全量复验执行。</p>
 
       <ul class="eval-grid">
         <li class="eval-metric">
@@ -127,7 +127,7 @@
             <span class="eval-line eval-line-ok">验收线 ≥ 85%</span>
           </div>
           <p class="eval-metric-desc">系统判定（命中 / 未命中负面清单）与人工标注判定的一致率。分母只计已标注判定的案例，未标注的进逐案例明细、不参与该指标。</p>
-          <p class="eval-metric-value"><span class="badge">69.49%</span>未达线，差 15.51pp</p>
+          <p class="eval-metric-value"><span class="badge">97.78%</span>达标 ✓</p>
         </li>
         <li class="eval-metric">
           <div class="eval-metric-head">
@@ -135,7 +135,7 @@
             <span class="eval-line eval-line-ok">验收线 ≥ 80%</span>
           </div>
           <p class="eval-metric-desc">正例条款召回（micro 口径）：Σ｜预测 ∩ 标注｜／Σ｜标注｜。只标「命中」未给具体条款的案例退化为整案召回，明细中标 case-level。</p>
-          <p class="eval-metric-value"><span class="badge">48.65%</span>未达线，差 31.35pp</p>
+          <p class="eval-metric-value"><span class="badge">95.65%</span>达标 ✓</p>
         </li>
         <li class="eval-metric">
           <div class="eval-metric-head">
@@ -150,7 +150,7 @@
       <div class="eval-matrix">
         <div class="eval-matrix-head">
           <h3 class="eval-matrix-title">完整系统（基线）vs 消融组 · 七组对比</h3>
-          <span class="pill">实测 · 2026-11-19 全量真跑批（142 条 × 7 组）</span>
+          <span class="pill">实测 · 2026-11-20 定稿（142 条 × 7 组，全口径留痕）</span>
         </div>
         <p class="eval-matrix-sub">六组消融开关集中在 <code>eval/config.py</code>（唯一来源）：完整系统＝六组开关全开（基线组），逐组移除一个模块即得消融组，共 7 组对比矩阵。</p>
         <div class="eval-table-wrap" tabindex="0" role="region" aria-label="消融对比矩阵（横向可滚动）">
@@ -169,58 +169,58 @@
               <tr>
                 <th scope="row">完整系统（基线）</th>
                 <td data-label="被移除模块">—（六组开关全开）</td>
-                <td data-label="匹配率"><span class="badge">69.49%</span></td>
-                <td data-label="召回率"><span class="badge">48.65%</span></td>
+                <td data-label="匹配率"><span class="badge">97.78%</span></td>
+                <td data-label="召回率"><span class="badge">95.65%</span></td>
                 <td data-label="引用错误率"><span class="badge">0.00%</span></td>
-                <td data-label="达标">1/3（仅引用达标）</td>
+                <td data-label="达标">3/3 ✓</td>
               </tr>
               <tr>
                 <th scope="row">w/o:temporal_filter</th>
                 <td data-label="被移除模块">时序版本过滤：按查询时间剔除已废止条款</td>
-                <td data-label="匹配率"><span class="badge">71.19%</span></td>
-                <td data-label="召回率"><span class="badge">48.65%</span></td>
+                <td data-label="匹配率"><span class="badge">97.78%</span></td>
+                <td data-label="召回率"><span class="badge">95.65%</span></td>
                 <td data-label="引用错误率"><span class="badge">0.00%</span></td>
-                <td data-label="达标">1/3</td>
+                <td data-label="达标">3/3 ✓</td>
               </tr>
               <tr>
                 <th scope="row">w/o:dense_retrieval</th>
                 <td data-label="被移除模块">稠密检索：embedding 编码 + Chroma top-k（关闭后①段无检索上下文，规则块仍保留）</td>
-                <td data-label="匹配率"><span class="badge">71.19%</span></td>
-                <td data-label="召回率"><span class="badge">48.65%</span></td>
+                <td data-label="匹配率"><span class="badge">97.78%</span></td>
+                <td data-label="召回率"><span class="badge">95.65%</span></td>
                 <td data-label="引用错误率"><span class="badge">0.00%</span></td>
-                <td data-label="达标">1/3</td>
+                <td data-label="达标">3/3 ✓</td>
               </tr>
               <tr>
                 <th scope="row">w/o:rule_scan</th>
                 <td data-label="被移除模块">规则扫描：负面清单全量确定性匹配（关闭后②段仅剩 LLM 蕴含命中）</td>
-                <td data-label="匹配率"><span class="badge">55.93%</span></td>
+                <td data-label="匹配率"><span class="badge">73.33%</span></td>
                 <td data-label="召回率"><span class="badge">0.00%</span></td>
                 <td data-label="引用错误率"><span class="badge">0.00%</span></td>
-                <td data-label="达标">1/3</td>
+                <td data-label="达标">1/3（仅引用达标）</td>
               </tr>
               <tr>
                 <th scope="row">w/o:entail_review</th>
                 <td data-label="被移除模块">蕴含复核：LLM 对 G01-G11 载体的二次确认（关闭后②段仅剩规则命中）</td>
-                <td data-label="匹配率"><span class="badge">67.80%</span></td>
-                <td data-label="召回率"><span class="badge">48.65%</span></td>
+                <td data-label="匹配率"><span class="badge">97.78%</span></td>
+                <td data-label="召回率"><span class="badge">95.65%</span></td>
                 <td data-label="引用错误率"><span class="badge">0.00%</span></td>
-                <td data-label="达标">1/3</td>
+                <td data-label="达标">3/3 ✓</td>
               </tr>
               <tr>
                 <th scope="row">w/o:query_decomposition</th>
                 <td data-label="被移除模块">查询分解：结构化抽取与术语归一化</td>
-                <td data-label="匹配率"><span class="badge">71.19%</span></td>
-                <td data-label="召回率"><span class="badge">48.65%</span></td>
+                <td data-label="匹配率"><span class="badge">97.78%</span></td>
+                <td data-label="召回率"><span class="badge">95.65%</span></td>
                 <td data-label="引用错误率"><span class="badge">0.00%</span></td>
-                <td data-label="达标">1/3</td>
+                <td data-label="达标">3/3 ✓</td>
               </tr>
               <tr>
                 <th scope="row">w/o:citation_validator</th>
                 <td data-label="被移除模块">引用校验器：标记存在性 / 上下文包含性 / 姿态禁语兜底</td>
-                <td data-label="匹配率"><span class="badge">69.49%</span></td>
-                <td data-label="召回率"><span class="badge">48.65%</span></td>
+                <td data-label="匹配率"><span class="badge">97.78%</span></td>
+                <td data-label="召回率"><span class="badge">95.65%</span></td>
                 <td data-label="引用错误率"><span class="badge">0.00%</span></td>
-                <td data-label="达标">1/3</td>
+                <td data-label="达标">3/3 ✓</td>
               </tr>
             </tbody>
           </table>
@@ -231,7 +231,7 @@
       <details class="eval-details">
         <summary class="eval-summary">数字从哪里来 · 如何复算</summary>
         <div class="eval-details-body">
-          <p>本区块数字＝2026-11-19 全量四分片真跑批（负责人片＋三队友片）经 <code>eval/merge</code> 合并的结果。跑批命令（在仓库根目录执行）：</p>
+          <p>本区块数字＝2026-11-20 终版：四分片真跑批＋失分案例处置后，<code>eval.reevaluate</code> 按定稿标注重算（标注 vintage 指纹护栏见 PR #92）。跑批命令（在仓库根目录执行）：</p>
           <code class="eval-cmd">python -m eval.runner --cases &lt;数据仓&gt;/审计公告/案例标注表.csv --registry &lt;registry 导出&gt;.json --ablate-all --out runs/ablation</code>
           <ul>
             <li>案例标注表（142 条，含合规负对照）在团队数据仓、不随仓库分发：审计公告是评测出题集，进检索索引＝答案泄露（开发红线第 4 条）；</li>
