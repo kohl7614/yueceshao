@@ -107,3 +107,63 @@ def test_merge_overlapping_shards_rejected(tmp_path: Path) -> None:
     # 同一目录传两次＝区间完全重叠
     assert merge_main(["--inputs", str(out1), str(out1), "--out", str(final)]) == 2
     assert not (final / "metrics.json").exists()
+
+
+class TestVintageFingerprintGuard:
+    """标注 vintage 指纹护栏：分片用不同版本标注表跑批时 merge 拒并。"""
+
+    def _shard(self, tmp_path: Path, name: str, fingerprint: str | None) -> Path:
+        d = tmp_path / name
+        d.mkdir()
+        (d / "group_details.csv").write_text(
+            "group,case_id,expected_verdict,predicted_verdict,verdict_match,expected_refs,"
+            "predicted_refs,refs_hit,recall_mode,citations_total,citations_bad,"
+            "forbidden_hits,notes,degraded,attempts,entail_failed\n"
+            f"full,{name}-1,hit,hit,1,粤测农〔2099〕1号#4,粤测农〔2099〕1号#4,"
+            "粤测农〔2099〕1号#4,ref-level,1,0,,,0,1,0\n",
+            encoding="utf-8-sig")
+        meta = {"registry_provided": True}
+        if fingerprint is not None:
+            meta["cases_fingerprint"] = fingerprint
+        (d / "metrics.json").write_text(
+            json.dumps(meta), encoding="utf-8")
+        return d
+
+    def test_mixed_fingerprints_refused(self, tmp_path: Path, capsys) -> None:
+        a = self._shard(tmp_path, "a", "aaaa1111bbbb2222")
+        b = self._shard(tmp_path, "b", "cccc3333dddd4444")
+        assert merge_main(["--inputs", str(a), str(b), "--out",
+                           str(tmp_path / "out")]) == 2
+        assert "标注 vintage 不一致" in capsys.readouterr().err
+
+    def test_same_fingerprints_merge(self, tmp_path: Path) -> None:
+        a = self._shard(tmp_path, "a", "aaaa1111bbbb2222")
+        b = self._shard(tmp_path, "b", "aaaa1111bbbb2222")
+        assert merge_main(["--inputs", str(a), str(b), "--out",
+                           str(tmp_path / "out")]) == 0
+
+    def test_all_unknown_not_blocked(self, tmp_path: Path) -> None:
+        """老产物（无指纹字段）之间不拦——保持对历史分片的兼容。"""
+        a = self._shard(tmp_path, "a", None)
+        b = self._shard(tmp_path, "b", None)
+        assert merge_main(["--inputs", str(a), str(b), "--out",
+                           str(tmp_path / "out")]) == 0
+
+    def test_runner_writes_fingerprint(self, tmp_path: Path) -> None:
+        """runner 真跑 null 管线后，metrics.json 的 cases_fingerprint 与标注表
+        sha256 前 16 位一致（runner↔merge 的字段名契约由本测试钉住——
+        预审发现初版是空转断言，只测了 hashlib 本身）。"""
+        import hashlib
+
+        cases = tmp_path / "cases.csv"
+        cases.write_text(
+            "案例编号,改编后申报场景描述_体检输入,预期命中预警,历史适用条款_文号及条款号\n"
+            "T1,拟用资金建设楼堂馆所,应命中,粤测农〔2099〕1号#4\n",
+            encoding="utf-8-sig")
+        out = tmp_path / "out"
+        rc = runner_main(["--cases", str(cases), "--pipeline", "null",
+                          "--out", str(out)])
+        assert rc == 0 or rc == 1  # 指标未达线返回 1 也算跑完
+        metrics = json.loads((out / "metrics.json").read_text(encoding="utf-8"))
+        expect = hashlib.sha256(cases.read_bytes()).hexdigest()[:16]
+        assert metrics["cases_fingerprint"] == expect
