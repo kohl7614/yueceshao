@@ -150,13 +150,20 @@ class TestVintageFingerprintGuard:
                            str(tmp_path / "out")]) == 0
 
     def test_runner_writes_fingerprint(self, tmp_path: Path) -> None:
-        """runner 把标注表 sha256 前 16 位写进 metrics.json。"""
+        """runner 真跑 null 管线后，metrics.json 的 cases_fingerprint 与标注表
+        sha256 前 16 位一致（runner↔merge 的字段名契约由本测试钉住——
+        预审发现初版是空转断言，只测了 hashlib 本身）。"""
+        import hashlib
+
         cases = tmp_path / "cases.csv"
         cases.write_text(
             "案例编号,改编后申报场景描述_体检输入,预期命中预警,历史适用条款_文号及条款号\n"
             "T1,拟用资金建设楼堂馆所,应命中,粤测农〔2099〕1号#4\n",
             encoding="utf-8-sig")
-        import hashlib
+        out = tmp_path / "out"
+        rc = runner_main(["--cases", str(cases), "--pipeline", "null",
+                          "--out", str(out)])
+        assert rc == 0 or rc == 1  # 指标未达线返回 1 也算跑完
+        metrics = json.loads((out / "metrics.json").read_text(encoding="utf-8"))
         expect = hashlib.sha256(cases.read_bytes()).hexdigest()[:16]
-        # 直接验证指纹函数语义：与 runner 写入口径一致（前16位sha256）
-        assert len(expect) == 16 and expect.isalnum()
+        assert metrics["cases_fingerprint"] == expect
