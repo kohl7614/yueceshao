@@ -118,7 +118,7 @@
     <!-- ④ 系统评测：三项指标与消融对比（静态框架展示，数字待真实管线跑批回填，不预填预估数字） -->
     <section class="eval" id="eval" aria-labelledby="eval-title">
       <h2 id="eval-title" class="section-title">系统评测 · 三项指标与消融对比</h2>
-      <p class="section-sub">三项指标衡量「体检报告可不可信」：<strong>匹配率</strong>看判定对不对，<strong>召回率</strong>看该查到的条款有没有漏，<strong>引用错误率</strong>看文号可不可核验。指标口径与验收线来自团队手册 3.4（实现见 <code>eval/metrics.py</code>）；完整系统（基线）与消融组的对比矩阵由 <code>eval/runner.py</code> 跑批产出。2026-11-20 定稿：全量真跑批 142 条 × 7 组（四分片，qwen-max，temperature=0）＋失分案例归因处置（补写 3／期望重指向 2／口径重分类 10，逐条留痕见数据仓），以下为终版实测。评测基线＝纯稠密检索管线（A5 混合检索与 A7 质量门合入前），检索增强后的复测按排期 2027.04 全量复验执行。</p>
+      <p class="section-sub">三项指标衡量「体检报告可不可信」：<strong>匹配率</strong>看判定对不对，<strong>召回率</strong>看该查到的条款有没有漏，<strong>引用错误率</strong>看文号可不可核验。指标口径与验收线来自团队手册 3.4（实现见 <code>eval/metrics.py</code>）；完整系统（基线）与消融组的对比矩阵由 <code>eval/runner.py</code> 跑批产出。2026-11-20 定稿：全量真跑批 142 条 × 7 组（四分片，qwen-max，temperature=0）＋失分案例归因处置（补写 3／期望重指向 2／口径重分类 10，逐条留痕见数据仓），以下为终版实测。评测基线＝纯稠密检索管线（A5 混合检索与 A7 质量门合入前）。2026-11-21 产线口径复测（A5＋A7 全开，142 条 × 1 组，qwen-max 单模型，temperature=0）：三指标与纯稠密基线完全一致——97.78%／95.65%／0.00%（runs/hybrid-final-20261120 留痕，标注指纹 72394e65041ff790）；下方七组消融矩阵为纯稠密口径产出。</p>
 
       <ul class="eval-grid">
         <li class="eval-metric">
@@ -150,7 +150,7 @@
       <div class="eval-matrix">
         <div class="eval-matrix-head">
           <h3 class="eval-matrix-title">完整系统（基线）vs 消融组 · 七组对比</h3>
-          <span class="pill">实测 · 2026-11-20 定稿（142 条 × 7 组，全口径留痕）</span>
+          <span class="pill">实测 · 2026-11-20 定稿（142 条 × 7 组，纯稠密口径，全口径留痕）</span>
         </div>
         <p class="eval-matrix-sub">六组消融开关集中在 <code>eval/config.py</code>（唯一来源）：完整系统＝六组开关全开（基线组），逐组移除一个模块即得消融组，共 7 组对比矩阵。</p>
         <div class="eval-table-wrap" tabindex="0" role="region" aria-label="消融对比矩阵（横向可滚动）">
