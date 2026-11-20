@@ -487,7 +487,7 @@ def build_llm(config_path: Path | str = DEFAULT_CONFIG_PATH) -> QwenLLM | None:
 
     服务与评测共用的唯一装配方（评测侧 eval/real_pipeline 委托此函数）：缺
     generation 段或 key 时**大声告警**而非静默降级——调用方（服务入口）应把
-    ``None`` 视为拒启条件，Mock 报告对外服务没有实验意义。
+    ``None`` 视为拒启条件，Mock 装配产出的报告不可信、不得对外服务。
     """
     config = _load_config(Path(config_path))
     section = config.get("generation") if isinstance(config, Mapping) else None

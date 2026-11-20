@@ -40,7 +40,11 @@ def build_real_pipeline(
     config_path: Path | str | None = None,
     llm: MockLLM | QwenLLM | None = None,
 ) -> RealCheckupPipeline:
-    """装配真实管线；LLM 未注入时按 config 装配，key 不到位**拒启**（见模块 docstring）。"""
+    """装配真实管线；LLM 未注入时按 config 装配，key 不到位**拒启**（见模块 docstring）。
+
+    ``llm`` 参数仅测试注入通道（生产 uvicorn factory 不传；运行时不校验注入类型，
+    非生产类型的行为由注入方负责）。
+    """
     target = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
     if llm is None:
         llm = build_llm(target)
