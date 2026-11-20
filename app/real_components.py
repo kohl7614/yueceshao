@@ -871,10 +871,27 @@ class _HybridPipelineRetriever:
         return getattr(self._hybrid.dense, "backend", None)
 
     def rebuild(self, *, temporal: bool) -> _HybridPipelineRetriever:
-        """以另一档时效开关重建变体（复用 BM25 索引与稠密后端存储）。"""
+        """以另一档时效开关重建变体（复用 BM25 索引与稠密 embedder/backend 实例）。
+
+        稠密一路**不重新构造**：复用 embedder/backend、只换时效开关的配置——
+        重新 build_retriever 会二次加载 embedding 模型并新建 Chroma client，
+        且在无索引环境（CI）触发空集合护栏炸测试（预审实证：PR 分支 CI 红、
+        本机带真索引所以绿——正是 #87 堵过的「环境绿」假象）。
+        """
+        base = self._hybrid.dense
+        dense = base
+        embedder = getattr(base, "embedder", None)
+        backend = getattr(base, "backend", None)
+        base_config = getattr(base, "config", None)
+        if embedder is not None and backend is not None and base_config is not None:
+            from rag.retriever import DenseRetriever
+
+            dense = DenseRetriever(
+                embedder, backend,
+                _dc_replace(base_config, enable_temporal_filter=temporal))
         return _build_hybrid(
-            self.source_config, temporal=temporal, sparse=self._sparse,
-            gate_runner=self._gate_runner)
+            self.source_config, temporal=temporal, dense=dense,
+            sparse=self._sparse, gate_runner=self._gate_runner)
 
     def retrieve(self, query: str) -> Any:
         if not query:
