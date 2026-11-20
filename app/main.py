@@ -6,9 +6,9 @@
 - GET /health：存活检查＋当前管线名。
 
 配置与装配：
-- 管线经 create_app(pipeline=...) 注入（依赖倒置：骨架默认 MockCheckupPipeline，
-  真实适配器——rag 检索接索引／rules 接数据仓／qwen API——实现同一 CheckupPipeline
-  协议后于此替换，路由零改动）；
+- 管线经 create_app(pipeline=...) 注入（依赖倒置：create_app 缺省 Mock（测试用）；
+  真实装配入口 = app/real_main.py（RealCheckupPipeline＋真实 LLM），实现同一
+  CheckupPipeline 协议，路由零改动）；
 - 配置走环境变量 / config.json（不硬编码 key）；日志用 logging。
 
 验收标准（开发手册 §3.5）：curl 一次体检端到端返回四段式报告——自动化形态见
@@ -63,13 +63,20 @@ def create_app(pipeline: CheckupPipeline | None = None) -> FastAPI:
     pipe = pipeline or MockCheckupPipeline()
     app = FastAPI(
         title="粤策哨 · 申报前体检 API",
-        version="0.1.0-skeleton",
-        description="县域强村公司与合作社申报前自查辅助（演示骨架；不构成合规判定）",
+        version="0.2.0-real-adapter",
+        description="县域强村公司与合作社申报前自查辅助（不构成合规判定；"
+                    "真实装配入口见 app/real_main.py，Mock 仅用于测试）",
     )
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "pipeline": pipe.name}
+        info: dict = {"status": "ok", "pipeline": pipe.name}
+        # 真实管线可选携带装配事实（索引块数/检索口径/LLM 后端）；Mock 无此方法，
+        # /health 保持骨架形状——响应字段按管线能力如实增减，不硬造。
+        extra = getattr(pipe, "health_info", None)
+        if callable(extra):
+            info.update(extra())
+        return info
 
     @app.post("/api/checkup", response_model=CheckupResponse)
     def checkup(req: CheckupRequest) -> CheckupResponse:

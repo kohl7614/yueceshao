@@ -482,6 +482,31 @@ def _entail_fallback(*_args: Any, **_kwargs: Any) -> str:
     return "[]"
 
 
+def build_llm(config_path: Path | str = DEFAULT_CONFIG_PATH) -> QwenLLM | None:
+    """按 config 的 ``generation`` 段装配真实 LLM；配置或 key 不到位返回 ``None``。
+
+    服务与评测共用的唯一装配方（评测侧 eval/real_pipeline 委托此函数）：缺
+    generation 段或 key 时**大声告警**而非静默降级——调用方（服务入口）应把
+    ``None`` 视为拒启条件，Mock 装配产出的报告不可信、不得对外服务。
+    """
+    config = _load_config(Path(config_path))
+    section = config.get("generation") if isinstance(config, Mapping) else None
+    if not isinstance(section, Mapping):
+        logger.warning(
+            "config.json 缺 generation 段：无法装配真实 LLM（返回 None）")
+        return None
+    api_key_env = str(section.get("api_key_env") or "DASHSCOPE_API_KEY")
+    if not (os.environ.get(api_key_env) or read_env_file(DEFAULT_ENV_PATH).get(api_key_env)):
+        logger.warning(
+            "环境变量与 %s 均无 %s：无法装配真实 LLM（返回 None）",
+            DEFAULT_ENV_PATH, api_key_env)
+        return None
+    logger.info(
+        "LLM 装配：model=%s base_url=%s（key 来自环境变量/%s，不打印）",
+        section.get("model"), section.get("base_url"), api_key_env)
+    return QwenLLM(config)
+
+
 class RealComponents:
     """真实检索＋真实规则扫描的组件集（LLM 默认 Mock，可注入 QwenLLM）。"""
 
@@ -841,6 +866,21 @@ class RealCheckupPipeline:
             entail_failed=bool(final.get("entail_failed", False)),
         )
 
+    def health_info(self) -> dict[str, Any]:
+        """服务健康检查附加信息（/health 合并返回；检索口径与装配事实如实上报）。
+
+        ``index_chunks`` 取检索后端集合块数（与 scripts/verify_index 同源口径）；
+        ``hybrid_enabled`` 是本进程**实际生效**的检索口径（读装配时的配置，
+        R0 回退闸门的观察窗口）；``llm_backend`` 诚实区分真调用与 Mock。
+        """
+        count = _safe_count(self.components._retriever)  # noqa: SLF001 - 同包读装配产物
+        retrieval = self.components._config.get("retrieval") or {}  # noqa: SLF001
+        return {
+            "index_chunks": count,
+            "hybrid_enabled": bool(retrieval.get("hybrid_enabled", True)),
+            "llm_backend": self.components.llm_backend,
+        }
+
 
 # ================================================================ 装配辅助
 
@@ -998,7 +1038,16 @@ def _build_gate_runner(config: Mapping[str, Any]) -> Any | None:
 
 
 def _build_retriever(config: Mapping[str, Any]) -> Any:
-    """装配检索阶段（A5：BM25＋稠密 RRF 混合，输出 Hit 契约不变）。"""
+    """装配检索阶段（A5：BM25＋稠密 RRF 混合，输出 Hit 契约不变）。
+
+    ``retrieval.hybrid_enabled=false`` 时退回纯稠密（pre-#91 路径逐字保留，
+    final-v3 基线口径）——这是 R0 回退闸门的实现钩子（产品化路线图 D2）：
+    线上诊断需要或口径回退时一键切换，默认 true 行为不变。
+    """
+    if not (config.get("retrieval") or {}).get("hybrid_enabled", True):
+        from rag.retriever import build_retriever
+
+        return build_retriever(config)
     return _build_hybrid(config, temporal=True)
 
 
