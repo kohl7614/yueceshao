@@ -97,24 +97,27 @@ def _execute_checkup(pipe: CheckupPipeline, description: str) -> dict:
 
     失败一律转成携带**安全文案**的 RuntimeError——TaskStore 把异常消息存进
     failed.error 返回给客户端，内部细节（路径/堆栈/key）只落服务端日志。
+    整个构造过程包在 try 内：管线违约（如字段类型不符）也不裸传异常原文。
     """
     try:
         result: PipelineResult = pipe.run(description)
+        if DISCLAIMER_SENTINEL not in result.rendered_text:
+            logger.error("管线产物缺少免责声明，任务转失败")
+            raise RuntimeError(_SENTINEL_FAILURE)
+        return CheckupResponse(
+            pipeline=pipe.name,
+            report=result.to_api_dict()["report"],
+            rendered_text=result.rendered_text,
+            degraded=result.degraded,
+            attempts=result.attempts,
+            failed_sections=list(result.failed_sections),
+            disclaimer=result.disclaimer,
+        ).model_dump()
+    except RuntimeError:
+        raise  # 安全文案（含上面的哨兵失败）原样上抛
     except Exception:  # noqa: BLE001 —— 客户端只见安全文案（原同步 500 的 detail 口径）
         logger.exception("体检管线执行失败")
         raise RuntimeError(_GENERIC_FAILURE) from None
-    if DISCLAIMER_SENTINEL not in result.rendered_text:
-        logger.error("管线产物缺少免责声明，任务转失败")
-        raise RuntimeError(_SENTINEL_FAILURE)
-    return CheckupResponse(
-        pipeline=pipe.name,
-        report=result.to_api_dict()["report"],
-        rendered_text=result.rendered_text,
-        degraded=result.degraded,
-        attempts=result.attempts,
-        failed_sections=list(result.failed_sections),
-        disclaimer=result.disclaimer,
-    ).model_dump()
 
 
 def create_app(pipeline: CheckupPipeline | None = None) -> FastAPI:
