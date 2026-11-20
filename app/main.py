@@ -1,18 +1,22 @@
-"""app/main.py — FastAPI 服务骨架（手册 §3.5 feat/app-skeleton）。
+"""app/main.py — FastAPI 服务（手册 §3.5 骨架 ＋ 产品化 M1-R2 异步任务化）。
 
 路由：
-- POST /api/checkup：接收项目描述 → 体检管线 → 四段式报告（结构化 JSON＋渲染
-  文本），响应显式携带免责声明（红线：免责声明由渲染层强制注入，此处复核）；
-- GET /health：存活检查＋当前管线名。
+- POST /api/checkup：接收项目描述 → **入队体检任务** → 202＋task_id＋轮询地址
+  （CPU 重排跑不进小程序 60s 请求超时，调研 §3.3；同步契约自 R2 起废弃）；
+- GET /api/tasks/{task_id}：轮询任务状态（queued/running/done/failed）；
+  done 时 result 携带完整四段式报告（结构化 JSON＋渲染文本＋免责声明）；
+- GET /health：存活检查＋当前管线名（真实管线另带装配事实，见 health_info）。
 
 配置与装配：
 - 管线经 create_app(pipeline=...) 注入（依赖倒置：create_app 缺省 Mock（测试用）；
   真实装配入口 = app/real_main.py（RealCheckupPipeline＋真实 LLM），实现同一
   CheckupPipeline 协议，路由零改动）；
+- 任务表 = app/tasks.py 进程内实现（单 worker 串行＋TTL 1 小时；重启丢任务，
+  轮询 404 后客户端重新提交）；R3 在提交端点上限流；
 - 配置走环境变量 / config.json（不硬编码 key）；日志用 logging。
 
-验收标准（开发手册 §3.5）：curl 一次体检端到端返回四段式报告——自动化形态见
-tests/test_app_skeleton.py（TestClient 端到端）。
+免责声明红线：渲染层保证其存在（gen.validator/渲染管线），worker 在任务完成时
+复核哨兵，缺失即 failed（安全文案，不泄内部细节）。
 """
 
 from __future__ import annotations
@@ -23,12 +27,20 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 
 from app.pipeline import CheckupPipeline, MockCheckupPipeline, PipelineResult
+from app.tasks import STATUS_QUEUED, TaskStore
 from gen.schema import DISCLAIMER_TEXT
 
 logger = logging.getLogger(__name__)
 
 # 免责声明哨兵＝完整产品级原文（渲染层注入的即此文本，逐字比对最严格）
 DISCLAIMER_SENTINEL = DISCLAIMER_TEXT
+
+# 失败安全文案（与任务 failed 状态一起返回；内部细节只落服务端日志）
+_GENERIC_FAILURE = "体检执行失败，请稍后重试"
+_SENTINEL_FAILURE = "服务内部校验失败"
+
+#: 轮询预计耗时提示（UX 参考值，非承诺）：真实管线（CPU 重排）约两分钟，其余取缺省。
+DEFAULT_ESTIMATED_SECONDS = 5
 
 
 class CheckupRequest(BaseModel):
@@ -46,8 +58,30 @@ class CheckupRequest(BaseModel):
         return v.strip()
 
 
+class TaskSubmissionResponse(BaseModel):
+    """202 响应：任务受理凭据（轮询地址＋预计耗时提示）。"""
+
+    task_id: str
+    status: str
+    poll_url: str
+    estimated_seconds: int
+
+
+class TaskStatusResponse(BaseModel):
+    """轮询响应：状态与产物（终态前 result/error 均为空）。"""
+
+    task_id: str
+    status: str
+    created_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    elapsed_ms: int | None = None
+    result: dict | None = None
+    error: str | None = None
+
+
 class CheckupResponse(BaseModel):
-    """体检响应：pipeline 名＋结构化四段＋渲染文本＋降级标记＋免责声明。"""
+    """体检结果（done 任务的 result 形状；同步契约时代即此形状，不变）。"""
 
     pipeline: str
     report: dict
@@ -58,12 +92,38 @@ class CheckupResponse(BaseModel):
     disclaimer: str
 
 
+def _execute_checkup(pipe: CheckupPipeline, description: str) -> dict:
+    """跑一次体检并构造结果 payload（worker 线程内执行；免责声明哨兵复核）。
+
+    失败一律转成携带**安全文案**的 RuntimeError——TaskStore 把异常消息存进
+    failed.error 返回给客户端，内部细节（路径/堆栈/key）只落服务端日志。
+    """
+    try:
+        result: PipelineResult = pipe.run(description)
+    except Exception:  # noqa: BLE001 —— 客户端只见安全文案（原同步 500 的 detail 口径）
+        logger.exception("体检管线执行失败")
+        raise RuntimeError(_GENERIC_FAILURE) from None
+    if DISCLAIMER_SENTINEL not in result.rendered_text:
+        logger.error("管线产物缺少免责声明，任务转失败")
+        raise RuntimeError(_SENTINEL_FAILURE)
+    return CheckupResponse(
+        pipeline=pipe.name,
+        report=result.to_api_dict()["report"],
+        rendered_text=result.rendered_text,
+        degraded=result.degraded,
+        attempts=result.attempts,
+        failed_sections=list(result.failed_sections),
+        disclaimer=result.disclaimer,
+    ).model_dump()
+
+
 def create_app(pipeline: CheckupPipeline | None = None) -> FastAPI:
-    """装配 FastAPI 实例（pipeline 缺省为 Mock——骨架阶段，真实适配器后置替换）。"""
+    """装配 FastAPI 实例（pipeline 缺省为 Mock——测试用；真实入口见 app/real_main.py）。"""
     pipe = pipeline or MockCheckupPipeline()
+    store = TaskStore()
     app = FastAPI(
         title="粤策哨 · 申报前体检 API",
-        version="0.2.0-real-adapter",
+        version="0.3.0-async-tasks",
         description="县域强村公司与合作社申报前自查辅助（不构成合规判定；"
                     "真实装配入口见 app/real_main.py，Mock 仅用于测试）",
     )
@@ -78,27 +138,28 @@ def create_app(pipeline: CheckupPipeline | None = None) -> FastAPI:
             info.update(extra())
         return info
 
-    @app.post("/api/checkup", response_model=CheckupResponse)
-    def checkup(req: CheckupRequest) -> CheckupResponse:
-        logger.info("体检请求：%d 字", len(req.description))
+    @app.post("/api/checkup", status_code=202, response_model=TaskSubmissionResponse)
+    def checkup(req: CheckupRequest) -> TaskSubmissionResponse:
+        logger.info("体检任务受理：%d 字", len(req.description))
         try:
-            result: PipelineResult = pipe.run(req.description)
-        except Exception as exc:  # noqa: BLE001 —— 骨架阶段兜底成 500＋日志，不把堆栈泄给客户端
-            logger.exception("体检管线执行失败")
-            raise HTTPException(status_code=500, detail="体检执行失败，请稍后重试") from exc
-        # 免责声明最后防线：管线产物缺失即 500（渲染层保证其存在，此处兜底复核）
-        if DISCLAIMER_SENTINEL not in result.rendered_text:
-            logger.error("管线产物缺少免责声明，拒绝返回")
-            raise HTTPException(status_code=500, detail="服务内部校验失败")
-        return CheckupResponse(
-            pipeline=pipe.name,
-            report=result.to_api_dict()["report"],
-            rendered_text=result.rendered_text,
-            degraded=result.degraded,
-            attempts=result.attempts,
-            failed_sections=list(result.failed_sections),
-            disclaimer=result.disclaimer,
+            task_id = store.submit(lambda: _execute_checkup(pipe, req.description))
+        except Exception as exc:  # noqa: BLE001 —— 入队失败（线程池已关等）兜底成 500
+            logger.exception("体检任务入队失败")
+            raise HTTPException(status_code=500, detail="服务暂不可用，请稍后重试") from exc
+        return TaskSubmissionResponse(
+            task_id=task_id,
+            status=STATUS_QUEUED,
+            poll_url=f"/api/tasks/{task_id}",
+            estimated_seconds=getattr(pipe, "estimated_seconds", DEFAULT_ESTIMATED_SECONDS),
         )
+
+    @app.get("/api/tasks/{task_id}", response_model=TaskStatusResponse)
+    def task_status(task_id: str) -> TaskStatusResponse:
+        record = store.get(task_id)
+        if record is None:
+            raise HTTPException(
+                status_code=404, detail="任务不存在或已过期（保留 1 小时），请重新提交")
+        return TaskStatusResponse(**record)
 
     return app
 

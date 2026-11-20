@@ -1,8 +1,9 @@
 """tests/test_app_skeleton.py — feat/app-skeleton 端到端测试（手册 §3.5 验收）。
 
-验收标准：curl 一次体检端到端返回四段式报告——本文件为其自动化形态
-（FastAPI TestClient），并覆盖：健康检查、空/短描述 422、免责声明强制在
-响应、A9 降级路径端到端、管线注入（协议替换点）。
+M1-R2 异步任务化后，验收形态从「一次同步请求」改为「提交 202 → 轮询 →
+done 携带四段式报告」（同步契约已废弃）；Mock 管线亚秒完成，轮询循环等待。
+覆盖：健康检查、空/短描述 422、免责声明强制在响应、A9 降级路径端到端、
+管线注入（协议替换点）。
 
 红线遵守：Mock 夹具全部〔2099〕人造文号＋自造条款原文（语料不入代码仓）。
 """
@@ -10,6 +11,8 @@
 from __future__ import annotations
 
 import json
+import time
+from typing import Any
 
 from app.main import create_app
 from app.pipeline import MockCheckupPipeline, PipelineResult
@@ -18,6 +21,26 @@ from fastapi.testclient import TestClient
 from gen.schema import DISCLAIMER_TEXT, CheckupReport
 
 client = TestClient(create_app())  # 默认 Mock 管线
+
+
+def _submit_and_wait(
+    http: TestClient, payload: dict, *, timeout_s: float = 10,
+) -> tuple[dict, dict]:
+    """提交体检并轮询到终态；返回 (受理响应, 任务快照)。"""
+    r = http.post("/api/checkup", json=payload)
+    assert r.status_code == 202, r.text
+    accepted = r.json()
+    assert accepted["status"] == "queued"
+    assert accepted["poll_url"] == f"/api/tasks/{accepted['task_id']}"
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        p = http.get(accepted["poll_url"])
+        assert p.status_code == 200, p.text
+        task = p.json()
+        if task["status"] in ("done", "failed"):
+            return accepted, task
+        time.sleep(0.05)
+    raise AssertionError("任务超时未到终态")
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +64,7 @@ def test_too_short_description_422() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 端到端（验收标准：一次请求返回四段式报告）
+# 端到端（验收标准：提交→轮询→done 携带四段式报告）
 # ---------------------------------------------------------------------------
 
 VALID = {"description": (
@@ -51,9 +74,10 @@ VALID = {"description": (
 
 
 def test_checkup_end_to_end_returns_four_sections() -> None:
-    r = client.post("/api/checkup", json=VALID)
-    assert r.status_code == 200
-    body = r.json()
+    accepted, task = _submit_and_wait(client, VALID)
+    assert task["status"] == "done" and task["error"] is None
+    body = task["result"]
+    assert body["pipeline"] == "mock-skeleton"
     # 四段＋免责声明全部在渲染文本中（端到端验收核心断言）
     for section in ("① 适用政策清单", "② 负面清单命中提示", "③ 材料缺项清单", "④ 修改建议"):
         assert section in body["rendered_text"]
@@ -70,7 +94,8 @@ def test_checkup_end_to_end_returns_four_sections() -> None:
 
 
 def test_response_schema_fields_complete() -> None:
-    body = client.post("/api/checkup", json=VALID).json()
+    _, task = _submit_and_wait(client, VALID)
+    body: dict[str, Any] = task["result"]
     assert set(body) == {"pipeline", "report", "rendered_text", "degraded",
                          "attempts", "failed_sections", "disclaimer"}
 
@@ -88,9 +113,9 @@ def test_retry_path_recovers_before_degradation() -> None:
         "suggestions": [{"text": "建议写明道路长度"}],
     }, ensure_ascii=False)
     pipe = MockCheckupPipeline(generation_outputs=(bad,))  # 单版坏输出→耗尽→降级
-    r = TestClient(create_app(pipe)).post("/api/checkup", json=VALID)
-    assert r.status_code == 200
-    body = r.json()
+    _, task = _submit_and_wait(TestClient(create_app(pipe)), VALID)
+    assert task["status"] == "done"
+    body = task["result"]
     assert body["degraded"] is True and body["attempts"] == 3
     assert "①适用政策" in body["failed_sections"]
     assert "① 适用政策清单〔已降级：未通过完整性校验，仅供参考〕" in body["rendered_text"]
@@ -103,7 +128,6 @@ def test_retry_path_recovers_before_degradation() -> None:
 # ---------------------------------------------------------------------------
 
 def test_custom_pipeline_injection() -> None:
-    @dataclass_free_result
     class StubPipeline:
         name = "stub"
 
@@ -122,11 +146,6 @@ def test_custom_pipeline_injection() -> None:
                 degraded=False, attempts=1,
             )
 
-    r = TestClient(create_app(StubPipeline())).post("/api/checkup", json=VALID)
-    assert r.status_code == 200
-    assert r.json()["pipeline"] == "stub"
-
-
-def dataclass_free_result(cls):
-    """测试辅助：直接返回类对象（仅用于注入 stub）。"""
-    return cls
+    _, task = _submit_and_wait(TestClient(create_app(StubPipeline())), VALID)  # type: ignore[arg-type]
+    assert task["status"] == "done"
+    assert task["result"]["pipeline"] == "stub"
