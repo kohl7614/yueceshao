@@ -41,7 +41,7 @@ import argparse
 import json
 import logging
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -432,6 +432,32 @@ class ChromaBackend:
     def __init__(self, collection: Any) -> None:
         """:param collection: ``chromadb`` 的 Collection 对象。"""
         self._collection = collection
+
+    def iter_corpus_records(self, page_size: int = 500) -> Iterator[dict[str, Any]]:
+        """按页产出全集合块记录（``{chunk_id, text, metadata}``），供 BM25 建索引。
+
+        混合检索（A5）的稀疏路语料取自这里而不是重新分块：两路共用同一份
+        Chroma 存储，候选池严格一致——重新分块会引入与索引不同步的漂移。
+        逐页读取，避免一次性拉全集合。
+        """
+        offset = 0
+        while True:
+            batch = self._collection.get(
+                include=["documents", "metadatas"], limit=page_size, offset=offset)
+            ids = list(batch.get("ids") or [])
+            if not ids:
+                return
+            documents = batch.get("documents") or []
+            metadatas = batch.get("metadatas") or []
+            for chunk_id, doc, meta in zip(ids, documents, metadatas, strict=True):
+                yield {
+                    "chunk_id": str(chunk_id),
+                    "text": doc if isinstance(doc, str) else "",
+                    "metadata": meta if isinstance(meta, Mapping) else {},
+                }
+            if len(ids) < page_size:
+                return
+            offset += len(ids)
 
     def search(
         self, vector: Sequence[float], top_k: int, where: Mapping[str, Any]

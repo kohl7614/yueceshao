@@ -37,7 +37,7 @@
     "enable_temporal_filter": true
   },
   "reranker": {
-    "_说明": "Cross-Encoder 重排与质量门（A7/A11）。tau 由 40 条自建查询标定：域内查询最低 0.605、完全域外最高 0.507，取 0.55 落在零误拦平台区。改阈值前请先复跑标定脚本，过程见 docs/rag-rerank-标定.md。",
+    "_说明": "Cross-Encoder 重排与质量门（A7/A11）。tau 由 40 条自建查询标定（2026-11-19 重标定于正本索引 20099 块、hybrid 产线候选：域内下沿 0.583、域外上沿 0.509，0.55 居中偏下）。换索引或改融合参数必须复跑标定，过程见 docs/rag-rerank-标定.md §9。",
     "model_name": "BAAI/bge-reranker-v2-m3",
     "model_dir": "models/bge-reranker-v2-m3",
     "device": "cpu",

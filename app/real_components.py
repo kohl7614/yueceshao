@@ -546,9 +546,12 @@ class RealComponents:
             stage="entail.review", source=self._ablation_source)(self._entail_impl)
 
     def _build_plain_retriever(self, retriever_plain: Any) -> Any:
-        """无时效过滤的检索器变体：注入优先；真实检索器带 config 时自动构造。"""
+        """无时效过滤的检索器变体：注入优先；混合检索器共享 BM25 索引重建。"""
         if retriever_plain is not None:
             return retriever_plain
+        if isinstance(self._retriever, _HybridPipelineRetriever):
+            # A5：时效消融变体复用同一份 BM25 索引（重建只换配置，不二次分词）。
+            return self._retriever.rebuild(temporal=False)
         base_config = getattr(self._retriever, "config", None)
         if base_config is None or not hasattr(base_config, "enable_temporal_filter"):
             return self._retriever  # 注入的假检索器无配置：复用同对象（行为不变）
@@ -842,11 +845,161 @@ class RealCheckupPipeline:
 # ================================================================ 装配辅助
 
 
-def _build_retriever(config: Mapping[str, Any]) -> Any:
-    """按配置装配真实 DenseRetriever（局部 import：不装 torch 也能 import 本模块）。"""
+class _HybridPipelineRetriever:
+    """HybridRetriever → 管线检索契约适配（A5＋A7）。
+
+    管线下游只认 ``retrieve(query) → RetrievalResult`` 与 ``backend.count()``；
+    融合命中透传 :attr:`~rag.hybrid.FusedHit.hit`（chunk_id/metadata/text 契约
+    不变），下游零改动。时效消融变体经 :meth:`rebuild` 共享同一份 BM25 索引
+    （重建只换配置，不重复全量分词）。``gate_runner`` 为 A7 质量门
+    （Cross-Encoder 重排＋τ 门＋扩池重试），装配后检索流程变为
+    「融合取候选 → 重排 → τ 门 → 不过门按 A11 诚实降级为未覆盖」。
+    """
+
+    def __init__(
+        self, hybrid: Any, source_config: Mapping[str, Any], sparse: Any,
+        gate_runner: Any = None,
+    ) -> None:
+        self._hybrid = hybrid
+        self.source_config = source_config
+        self._sparse = sparse
+        self._gate_runner = gate_runner
+
+    @property
+    def backend(self) -> Any:
+        """稠密一路的 Chroma 后端（_safe_count 读集合块数用）。"""
+        return getattr(self._hybrid.dense, "backend", None)
+
+    def rebuild(self, *, temporal: bool) -> _HybridPipelineRetriever:
+        """以另一档时效开关重建变体（复用 BM25 索引与稠密 embedder/backend 实例）。
+
+        稠密一路**不重新构造**：复用 embedder/backend、只换时效开关的配置——
+        重新 build_retriever 会二次加载 embedding 模型并新建 Chroma client，
+        且在无索引环境（CI）触发空集合护栏炸测试（预审实证：PR 分支 CI 红、
+        本机带真索引所以绿——正是 #87 堵过的「环境绿」假象）。
+        """
+        base = self._hybrid.dense
+        dense = base
+        embedder = getattr(base, "embedder", None)
+        backend = getattr(base, "backend", None)
+        base_config = getattr(base, "config", None)
+        if embedder is not None and backend is not None and base_config is not None:
+            from rag.retriever import DenseRetriever
+
+            dense = DenseRetriever(
+                embedder, backend,
+                _dc_replace(base_config, enable_temporal_filter=temporal))
+        return _build_hybrid(
+            self.source_config, temporal=temporal, dense=dense,
+            sparse=self._sparse, gate_runner=self._gate_runner)
+
+    def retrieve(self, query: str) -> Any:
+        if not query:
+            return RetrievalResult(query="", hits=[])
+        # 时效语义如实合成：hybrid 把时效按路内部应用（掩码），HybridResult.where
+        # 不携带——这里按 HybridConfig 的开关合成出等价的 where，
+        # 让 RetrievalResult.summary() 的「时效过滤已开/已关」标签与实际一致。
+        temporal = bool(getattr(self._hybrid.config, "enable_temporal_filter", True))
+        where = {"is_current": True} if temporal else {}
+        if self._gate_runner is None:
+            result = self._hybrid.retrieve(query)
+            return RetrievalResult(
+                query=result.query,
+                hits=[fused.hit for fused in result.hits],
+                where=where,
+            )
+        # A7：融合取候选 → 重排 → τ 门 → 降级重试；不过门按 A11 诚实降级为
+        # 未覆盖（空命中），诊断信息走日志，绝不把低置信候选当依据输出。
+        rer = self._gate_runner.run(
+            query,
+            lambda n: [fused.hit
+                       for fused in self._hybrid.retrieve(query, top_k=n).hits],
+        )
+        if not rer.gate.passed:
+            logger.warning(
+                "检索质量门未过：top_score=%s τ=%s（%s）——①段按未覆盖诚实降级",
+                getattr(rer.gate, "top_score", None),
+                getattr(rer.gate, "tau", None),
+                getattr(rer.gate, "reason", ""))
+            return RetrievalResult(query=query, hits=[], where=where)
+        return RetrievalResult(
+            query=query,
+            hits=[reranked.hit for reranked in rer.hits],
+            where=where,
+        )
+
+
+def _with_temporal(config: Mapping[str, Any], temporal: bool) -> dict[str, Any]:
+    """把时效开关同时落到 retrieval 与 hybrid 两段。
+
+    两处开关不一致会让消融出现「稀疏侧放开了、稠密侧还锁着」的假对照
+    （rag/hybrid.py 的 _sync_dense_temporal 会兜底对齐，这里从源头就写对）。
+    """
+    cfg = {**dict(config or {})}
+    cfg["retrieval"] = {
+        **(cfg.get("retrieval") or {}), "enable_temporal_filter": temporal}
+    cfg["hybrid"] = {
+        **(cfg.get("hybrid") or {}), "enable_temporal_filter": temporal}
+    return cfg
+
+
+def _build_hybrid(
+    config: Mapping[str, Any],
+    *,
+    temporal: bool = True,
+    sparse: Any = None,
+    dense: Any = None,
+    gate_runner: Any = None,
+) -> _HybridPipelineRetriever:
+    """装配 A5 混合检索（BM25＋稠密 RRF）＋A7 质量门，适配为管线检索契约。
+
+    BM25 语料直接取自 Chroma 已入库块（与稠密一路共用同一份存储，候选池
+    严格一致——重新分块会引入与索引不同步的漂移）；BM25 索引构建一次，
+    时效消融变体共享（省去二次全量分词）。``dense``／``gate_runner`` 为
+    测试注入点。
+    """
+    from rag.hybrid import BM25Index, HybridConfig, HybridRetriever
     from rag.retriever import build_retriever
 
-    return build_retriever(config)
+    cfg = _with_temporal(config, temporal)
+    dense = dense if dense is not None else build_retriever(cfg)
+    backend = getattr(dense, "backend", None)
+    total = backend.count() if hasattr(backend, "count") else -1
+    if total == 0:
+        raise RealAdapterError(
+            "检索集合为空：persist_dir 可能指错目录（Chroma 会自动建空集合、"
+            "count 读成 0，不报错）。请先用 scripts/verify_index.py 核对索引。")
+    if sparse is None:
+        sparse = BM25Index(backend.iter_corpus_records())
+    hybrid = HybridRetriever(dense, sparse, HybridConfig.from_config(cfg))
+    if gate_runner is None:
+        gate_runner = _build_gate_runner(config)
+    return _HybridPipelineRetriever(hybrid, config, sparse, gate_runner)
+
+
+def _build_gate_runner(config: Mapping[str, Any]) -> Any | None:
+    """装配 A7 质量门（Cross-Encoder 重排＋τ 门＋降级重试）。
+
+    与标定脚本（eval/calibration/calibrate_rerank.py）使用同一 Scorer
+    （CrossEncoderScorer）保证分数口径一致；``reranker.enable_gate=false``
+    或无 reranker 段时返回 None（纯 A5 路径）。τ 必须用当前索引的标定值——
+    换索引即作废旧标定（docs/rag-rerank-标定.md 的硬性纪律）。
+    """
+    section = (config or {}).get("reranker")
+    if not isinstance(section, Mapping):
+        return None
+    from rag.rerank import CrossEncoderScorer, GateRunner, Reranker, RerankerConfig
+
+    rc = RerankerConfig.from_config(config)
+    if not rc.enable_gate:
+        return None
+    scorer = CrossEncoderScorer(rc)
+    return GateRunner(Reranker(scorer, rc), config=rc)
+
+
+def _build_retriever(config: Mapping[str, Any]) -> Any:
+    """装配检索阶段（A5：BM25＋稠密 RRF 混合，输出 Hit 契约不变）。"""
+    return _build_hybrid(config, temporal=True)
 
 
 def _build_matcher(config_path: Path) -> NegRuleMatcher:
