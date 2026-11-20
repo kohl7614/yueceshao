@@ -822,6 +822,10 @@ class RealComponents:
 class RealCheckupPipeline:
     """真实适配器管线：真检索＋真规则＋（默认 Mock）LLM，实现 CheckupPipeline 协议。"""
 
+    #: 轮询预计耗时提示（秒；UX 参考值非承诺）：R0 全量复测均值约 76 秒/案例，
+    #: 负载高或 LLM 慢轮次会更长（e2e 实测 252 秒）——R4 部署后按服务器实测校准。
+    estimated_seconds = 120
+
     def __init__(
         self,
         config_path: Path | str | None = DEFAULT_CONFIG_PATH,
