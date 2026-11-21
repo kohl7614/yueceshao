@@ -1,0 +1,26 @@
+# 粤策哨 API nginx 反代示例（产品化 M1-R4；R5 域名备案通过后启用 HTTPS）。
+# 放置：/etc/nginx/sites-available/yueceshao → sites-enabled 软链 → nginx -t && reload。
+#
+# 前置：certbot 签发证书（域名备案通过后）：certbot --nginx -d <域名>
+# 小程序 request 合法域名要求 HTTPS＋ICP 备案（调研 §3.2）。
+
+server {
+    listen 80;
+    server_name <域名或服务器IP>;
+
+    # R5 备案通过后由 certbot 自动追加 443/ssl 段；HTTP 期仅用于联调。
+
+    # 请求体：体检描述上限 2000 字（服务端同限），余量给 JSON 结构
+    client_max_body_size 16k;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # 体检是异步的（202＋轮询），无需长超时；但冷启动期首个请求可能等模型加载
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 65s;
+    }
+}

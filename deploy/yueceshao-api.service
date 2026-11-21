@@ -1,0 +1,35 @@
+# 粤策哨 API 服务 systemd unit（产品化 M1-R4）。
+# 安装：sudo cp deploy/yueceshao-api.service /etc/systemd/system/ && sudo systemctl daemon-reload
+# 启用：sudo systemctl enable --now yueceshao-api
+# 日志：journalctl -u yueceshao-api -f
+#
+# ⚠ 密钥红线：本文件不入任何密钥——API key 只在 EnvironmentFile 指向的
+# /etc/yueceshao/yueceshao.env（root:0600，仓库外），内容一行：
+#   DASHSCOPE_API_KEY=sk-xxxx
+#
+# ⚠ 单进程约束：体检任务表在进程内（app/tasks.py），--workers 必须 1——
+# 多进程各自持有任务表，轮询会打到没有该任务的进程（404）。扩容前先把
+# 任务表外置（Redis 等），那是一次真实的架构升级，不是加个数字。
+
+[Unit]
+Description=粤策哨申报前体检 API（RAG 管线）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yueceshao
+Group=yueceshao
+WorkingDirectory=/opt/yueceshao/yueceshao
+EnvironmentFile=/etc/yueceshao/yueceshao.env
+# --workers 1：见文件头「单进程约束」。--proxy-headers：nginx 反代下让
+# client.host 反映真实客户端 IP（限流按 IP 计数依赖此正确性）。
+ExecStart=/opt/yueceshao/venv/bin/python -m uvicorn app.real_main:create_real_app --factory --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-from 127.0.0.1
+Restart=on-failure
+RestartSec=5
+# 冷启动加载 embedding+重排模型与 BM25 构建（实测约 20–60s，2C4G 服务器更慢），
+# 起动失败不要立即放弃；4G 内存机器建议另配 ≥2G swap（双模型＋Chroma 偏紧）。
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
