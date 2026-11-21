@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
 from app.pipeline import CheckupPipeline, MockCheckupPipeline, PipelineResult
@@ -44,6 +45,20 @@ logger = logging.getLogger(__name__)
 
 # 免责声明哨兵＝完整产品级原文（渲染层注入的即此文本，逐字比对最严格）
 DISCLAIMER_SENTINEL = DISCLAIMER_TEXT
+
+# CORS 白名单（产品化 M2-R6）：在线模式的页面部署在 GitHub Pages
+# （https://kohl7614.github.io/yueceshao/），跨源调用本 API；本地开发用
+# http.server 起页（8080）＋本地 Mock 服务（8000）。file://（Origin: null）
+# 不在白名单——在线模式开发请用 http.server 起页。备案域名就绪后若页面
+# 改由服务器同源托管，此处无需变更（同源请求不经 CORS）；若仍跨源，
+# 在此追加一行源即可。
+CORS_ALLOW_ORIGINS = (
+    "https://kohl7614.github.io",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+)
 
 # AI 生成标识（《人工智能生成合成内容标识办法》2025-09-01 施行，红线级）：
 # 显式标识行——服务端注入渲染文本，插在「免责声明：」之前（免责声明保持末行）。
@@ -184,9 +199,18 @@ def create_app(
         capacity=rate_limit_capacity, refill_seconds=rate_limit_refill_seconds)
     app = FastAPI(
         title="粤策哨 · 申报前体检 API",
-        version="0.4.0-compliance",
+        version="0.4.1-cors",
         description="县域强村公司与合作社申报前自查辅助（不构成合规判定；"
                     "真实装配入口见 app/real_main.py，Mock 仅用于测试）",
+    )
+    # 在线模式（R6）跨源放行：显式白名单见 CORS_ALLOW_ORIGINS；无 cookie/凭据
+    # 场景，allow_credentials=False；滥用防护靠 R3 限流（CORS 本身不防 curl）。
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(CORS_ALLOW_ORIGINS),
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
     )
 
     @app.get("/health")
