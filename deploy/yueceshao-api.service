@@ -27,9 +27,9 @@ EnvironmentFile=/etc/yueceshao/yueceshao.env
 ExecStart=/opt/yueceshao/venv/bin/python -m uvicorn app.real_main:create_real_app --factory --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-from 127.0.0.1
 Restart=on-failure
 RestartSec=5
-# 冷启动加载 embedding+重排模型与 BM25 构建（实测约 20–60s，2C4G 服务器更慢），
-# 起动失败不要立即放弃；4G 内存机器建议另配 ≥2G swap（双模型＋Chroma 偏紧）。
-TimeoutStartSec=300
+# 冷启动加载 embedding＋重排模型与 BM25 构建需 30–90s（2C4G 更慢），期间
+# health 未就绪属正常；起动失败由上面的 Restart=on-failure 自动拉起。
+# 4G 内存机器建议另配 ≥2G swap（双模型＋Chroma 偏紧）。
 
 [Install]
 WantedBy=multi-user.target
