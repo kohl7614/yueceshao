@@ -96,8 +96,9 @@ def test_checkup_end_to_end_returns_four_sections() -> None:
 def test_response_schema_fields_complete() -> None:
     _, task = _submit_and_wait(client, VALID)
     body: dict[str, Any] = task["result"]
+    # R3 起含 ai_generated（隐式标识字段）；其余七字段与同步契约时代一致
     assert set(body) == {"pipeline", "report", "rendered_text", "degraded",
-                         "attempts", "failed_sections", "disclaimer"}
+                         "attempts", "failed_sections", "disclaimer", "ai_generated"}
 
 
 # ---------------------------------------------------------------------------

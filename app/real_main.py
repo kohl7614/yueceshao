@@ -8,10 +8,11 @@ CI 导入本模块零副作用）：
 
     uvicorn app.real_main:create_real_app --factory --host 0.0.0.0 --port 8000
 
-路由继承 app/main.py（M1-R2 起异步契约）：``POST /api/checkup`` 提交体检任务
-（202＋task_id），``GET /api/tasks/{task_id}`` 轮询（done 携带四段式报告）；
-``GET /health`` 含 index_chunks / hybrid_enabled / llm_backend 装配事实。
-限流与 AI 生成标识注入属 R3，本入口先行打通端到端。
+路由继承 app/main.py（M1-R2 起异步契约，M1-R3 起带限流与 AI 标识）：
+``POST /api/checkup`` 提交体检任务（202＋task_id；每 IP 限流 5 次/时，
+超频 429），``GET /api/tasks/{task_id}`` 轮询（done 携带四段式报告＋AI 生成
+标识），``GET /health`` 含 index_chunks / hybrid_enabled / llm_backend 装配
+事实。
 
 拒启条件：LLM key 不到位即抛 RealAdapterError——Mock 报告对外服务没有实验意义
 （红线⑤：demo 不虚构；服务端宁可起不来也不能带假装配上线）。
