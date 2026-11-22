@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """软著源程序排版导出：从 git 工作树生成可提交的 PDF / DOCX。
 
 用途
