@@ -211,6 +211,9 @@ def create_app(
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type"],
+        # Retry-After（429 限流）默认不在跨源可读名单里——前端要展示它，
+        # 不暴露则跨源页面读到 null（PR#104 预审发现的真实缺口）。
+        expose_headers=["Retry-After"],
     )
 
     @app.get("/health")
