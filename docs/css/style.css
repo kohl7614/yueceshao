@@ -368,20 +368,104 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
 
 .case-fill-hint { margin: 0; font-size: 13px; color: var(--seal); font-weight: 600; }
 
-/* ---------- 未命中提示 ---------- */
+/* ---------- R6 双模式：模式标注＋在线状态条＋在线报告 ---------- */
 
-.notice { padding: 28px 0 8px; }
+/* 模式标注：输入框体检＝「真实分析」，典型案例卡片＝「演示数据」 */
+.field-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+.field-label-row label { margin-bottom: 0; }
 
-.notice-card {
-  background: var(--amber-tint);
-  border: 1px solid #ddc48f;
+.mode-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+.field-label-row .mode-badge { margin-left: 0; }
+.mode-online {
+  background: var(--seal-tint);
+  border: 1px solid rgba(162, 51, 39, .28);
+  color: var(--seal-deep);
+}
+.mode-offline {
+  background: var(--bamboo-tint);
+  border: 1px solid rgba(47, 109, 78, .3);
+  color: var(--bamboo);
+}
+
+/* 在线体检状态条：queued/running＋已等待秒数，状态如实显示 */
+.online-status { padding: 12px 0 6px; }
+
+.online-status-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--seal);
   border-radius: var(--radius);
-  padding: 20px 22px;
+  padding: 16px 20px;
   box-shadow: var(--shadow-card);
 }
-.notice-title { margin: 0 0 8px; font-weight: 700; font-size: 18px; }
-.notice-card p { margin: 0 0 14px; line-height: 1.7; }
-.notice-card .btn { min-height: 44px; }
+.online-status-card.is-error { border-top-color: var(--seal-deep); background: #fdf6ef; }
+.online-status-title {
+  margin: 0 0 4px;
+  font-weight: 700;
+  font-size: 16.5px;
+  font-family: var(--font-display);
+}
+.online-status-card.is-error .online-status-title { color: var(--seal-deep); }
+.online-status-text { margin: 0 0 2px; font-size: 14.5px; color: var(--ink-soft); line-height: 1.7; }
+.online-status-meta {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.online-status-actions { margin-top: 12px; display: flex; gap: 10px; }
+/* display:flex 会压过 hidden 属性的 UA 样式，显式声明保证 hidden 生效 */
+.online-status-actions[hidden] { display: none; }
+
+/* 在线体检报告：服务端 rendered_text 原样等宽渲染，不增删改 */
+.online-report { padding: 12px 0 6px; }
+
+.online-report-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--seal);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-card);
+}
+.online-report-title {
+  margin: 0 0 12px;
+  font-weight: 700;
+  font-size: 16.5px;
+  font-family: var(--font-display);
+}
+.online-report-pre {
+  margin: 0;
+  padding: 16px 18px;
+  background: #fbf7ec;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  font-family: Consolas, "SFMono-Regular", Menlo, "Liberation Mono", monospace;
+  font-size: 13.5px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: var(--ink);
+  max-height: 70vh;
+  overflow: auto;
+}
 
 /* ---------- 模拟体检过程（演示动画） ---------- */
 
@@ -857,6 +941,15 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
   display: grid;
   gap: 12px;
 }
+/* AI 生成标识行（红线级，插在免责声明之前，与在线口径同位同文） */
+.report-ai-note {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ash);
+  text-align: center;
+  line-height: 1.6;
+}
 .report-disclaimer {
   margin: 0;
   border: 1px solid var(--seal);
@@ -1192,6 +1285,10 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
   .check-form { padding: 16px 14px; }
   .btn { width: 100%; justify-content: center; display: inline-flex; align-items: center; }
   .form-actions { flex-direction: column; }
+  .field-label-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .mode-badge { margin-left: 6px; }
+  .field-label-row .mode-badge { margin-left: 0; }
+  .online-report-pre { padding: 12px 14px; font-size: 13px; }
   .case-list { grid-template-columns: 1fr; }
   .report-head, .report-sec, .report-foot, .report-head-note { padding-left: 17px; padding-right: 17px; }
   .report-title-line { font-size: 20px; }
@@ -1202,7 +1299,7 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
   .hit-compare { grid-template-columns: 1fr; }
   .hit-pane-clause { border-left: none; border-top: 1px dashed var(--line); }
   .hit-compare-link::before { content: "↓ "; }
-  .report-wrap, .notice, .presets { scroll-margin-top: 104px; }
+  .report-wrap, .online-report, .presets { scroll-margin-top: 104px; }
   /* 标签条移动端横向滑动 */
   .report-tabs { flex-wrap: nowrap; overflow-x: auto; margin-top: 12px; }
   .report-tab { flex-shrink: 0; white-space: nowrap; }
@@ -1260,8 +1357,9 @@ main { max-width: 940px; margin: 0 auto; padding: 0 20px; }
 /* 打印时隐藏固定免责声明栏（报告内已重复展示）；打印输出全部四段 */
 @media print {
   body { padding-bottom: 0; }
-  .disclaimer-bar, .site-header, .hero, .presets, .data-notes, .notice { display: none !important; }
+  .disclaimer-bar, .site-header, .hero, .presets, .data-notes, .online-status { display: none !important; }
   .report-tabs { display: none !important; }
   .report-sec[hidden] { display: block !important; }
+  .online-report-pre { max-height: none; overflow: visible; }
   .eval-table-wrap { overflow: visible; }
 }

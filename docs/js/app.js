@@ -1,10 +1,26 @@
 /* ============================================================
-   粤策哨 · 静态演示版 · 交互逻辑
-   纯前端：无后端、无请求、无密钥；内容不出本机。
+   粤策哨 · 静态演示版 · 交互逻辑（R6 前端双模式）
+   - 离线演示（演示数据）：预置案例卡片 → data.js 内置报告，无请求；
+   - 在线体检（真实分析）：输入框自由描述 → API_BASE 在线服务，
+     提交 → 轮询 → 服务端 rendered_text 原样渲染。
+   红线：前端不生成、不补写、不美化任何报告内容——在线模式的一切
+   内容来自 API 响应，离线模式来自 data.js 既有数据。
    ============================================================ */
 
 (function () {
   "use strict";
+
+  /* ---------- 在线体检服务基址（单一常量，一行切换） ----------
+     开发默认本地 Mock：uvicorn app.main:app --port 8000；
+     生产值由组长在部署时提供（备案域名），改本行即可。 */
+  const API_BASE = "http://127.0.0.1:8000";
+
+  /* 在线体检参数（契约：轮询每 5 秒一次；客户端轮询上限 15 分钟） */
+  const POLL_INTERVAL_MS = 5000;
+  const POLL_MAX_MS = 15 * 60 * 1000;
+  /* 输入长度阈值与后端 app/main.py 校验口径一致（strip 后计字） */
+  const MIN_DESC_CHARS = 20;
+  const MAX_DESC_CHARS = 2000;
 
   /* ---------- 元素引用 ---------- */
   const form = document.getElementById("check-form");
@@ -14,18 +30,34 @@
   const clearBtn = document.getElementById("clear-btn");
   const charCount = document.getElementById("char-count");
   const caseList = document.getElementById("case-list");
-  const notice = document.getElementById("notice");
-  const noticeBack = document.getElementById("notice-back");
   const reportWrap = document.getElementById("report-wrap");
   const reportBody = document.getElementById("report-body");
   const analyzePanel = document.getElementById("analyze");
   const analyzeSteps = document.getElementById("analyze-steps");
+  const onlineStatus = document.getElementById("online-status");
+  const onlineStatusCard = onlineStatus.querySelector(".online-status-card");
+  const onlineStatusTitle = document.getElementById("online-status-title");
+  const onlineStatusText = document.getElementById("online-status-text");
+  const onlineStatusMeta = document.getElementById("online-status-meta");
+  const onlineStatusActions = document.getElementById("online-status-actions");
+  const onlineRetryBtn = document.getElementById("online-retry-btn");
+  const onlineReport = document.getElementById("online-report");
+  const onlineReportPre = document.getElementById("online-report-pre");
 
   const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   let activeCaseId = null;
   let analyzeTimer = null;
   let analyzeFallbackTimer = null;
+
+  /* 在线体检进行中状态 */
+  let onlineInFlight = false;
+  let onlineTaskId = null;
+  let onlinePollUrl = null;
+  let onlinePollTimer = null;
+  let onlineElapsedTimer = null;
+  let onlineDeadline = 0;
+  let onlineStartedAt = 0;
 
   /* ---------- 工具函数 ---------- */
   function el(tag, className, text) {
@@ -234,8 +266,10 @@
     report.s1.forEach(function (p) {
       const item = el("li", "policy-item");
       const headRow = el("div", "policy-head");
-      headRow.appendChild(el("span", "policy-wenhao", p.wenh));
-      headRow.appendChild(el("span", "policy-title", p.title));
+      /* 空字段守卫：wenh 与 title 为空时不渲染空 span（C02 无文号条目
+         文号以《标题》形式放在 wenh、title 为空，见 data.js） */
+      if (p.wenh) headRow.appendChild(el("span", "policy-wenhao", p.wenh));
+      if (p.title) headRow.appendChild(el("span", "policy-title", p.title));
       const pillClass = p.status === "valid" ? "pill-valid" : p.status === "deadline" ? "pill-deadline" : "pill-void";
       headRow.appendChild(el("span", "pill " + pillClass, p.statusLabel));
       item.appendChild(headRow);
@@ -411,8 +445,12 @@
     });
     head.appendChild(tabBar);
 
-    /* 报告尾部：免责声明 + 操作 */
+    /* 报告尾部：AI 生成标识行（R6 待办①，与在线口径同位同文：插在免责声明之前）
+       ＋免责声明 ＋ 操作 */
     const foot = el("footer", "report-foot");
+    if (meta.aiNote) {
+      foot.appendChild(el("p", "report-ai-note", meta.aiNote));
+    }
     foot.appendChild(el("p", "report-disclaimer", "免责声明：" + DISCLAIMER_TEXT));
     const actions = el("div", "report-foot-actions");
     const backBtn = el("button", "btn btn-ghost", "返回输入框");
@@ -440,7 +478,6 @@
     clearTimeout(analyzeFallbackTimer);
     checkBtn.disabled = true;
     reportWrap.hidden = true;
-    notice.hidden = true;
     analyzePanel.hidden = false;
     const steps = Array.prototype.slice.call(analyzeSteps.children);
     steps.forEach(function (li) { li.classList.remove("is-active", "is-done"); });
@@ -490,14 +527,200 @@
     reportWrap.scrollIntoView({ behavior: REDUCED_MOTION ? "auto" : "smooth", block: "start" });
   }
 
-  function showNotice() {
-    notice.hidden = false;
-    notice.scrollIntoView({ behavior: REDUCED_MOTION ? "auto" : "smooth", block: "center" });
+  /* ---------- 在线体检（真实分析）：提交 → 轮询 → 原样渲染 ----------
+     契约（§三）：POST /api/checkup → 202{task_id,poll_url,estimated_seconds}；
+     GET poll_url 每 5 秒 → queued/running 继续、done 渲染 result.rendered_text、
+     failed 展示 error 安全文案；404＝任务不存在/已过期；422/429 照实展示。
+     内容红线：rendered_text 服务端已注入四段＋AI 生成标识行＋免责声明，
+     前端等宽块原样渲染，不隐藏、不删改、不美化。 */
+
+  function setOnlineStatus(title, text, meta, showRetry) {
+    onlineStatus.hidden = false;
+    onlineStatusTitle.textContent = title;
+    onlineStatusText.textContent = text || "";
+    if (meta !== null && meta !== undefined) onlineStatusMeta.textContent = meta;
+    onlineStatusActions.hidden = !showRetry;
   }
 
-  /* ---------- 体检流程 ---------- */
+  function stopOnlineTimers() {
+    clearInterval(onlinePollTimer);
+    clearInterval(onlineElapsedTimer);
+    onlinePollTimer = null;
+    onlineElapsedTimer = null;
+  }
+
+  function startOnlineElapsed() {
+    onlineStartedAt = Date.now();
+    onlineStatusMeta.textContent = "已等待 0 秒";
+    clearInterval(onlineElapsedTimer);
+    onlineElapsedTimer = setInterval(function () {
+      onlineStatusMeta.textContent =
+        "已等待 " + Math.floor((Date.now() - onlineStartedAt) / 1000) + " 秒";
+    }, 1000);
+  }
+
+  /* 终态（失败/未完成）：如实展示原因＋提供「重新提交」 */
+  function showOnlineError(message) {
+    stopOnlineTimers();
+    onlineInFlight = false;
+    checkBtn.disabled = false;
+    onlineStatusCard.classList.add("is-error");
+    setOnlineStatus("在线体检 · 未完成", message,
+      onlineTaskId ? "任务编号 " + onlineTaskId : "", true);
+  }
+
+  /* 提交后进入轮询循环（含 15 分钟客户端上限） */
+  function startPolling() {
+    onlineDeadline = Date.now() + POLL_MAX_MS;
+    clearInterval(onlinePollTimer);
+    onlinePollTimer = setInterval(pollTaskStatus, POLL_INTERVAL_MS);
+    pollTaskStatus();
+  }
+
+  async function pollTaskStatus() {
+    if (Date.now() >= onlineDeadline) {
+      /* 客户端轮询上限 15 分钟：停止轮询，展示 task_id＋重试指引 */
+      stopOnlineTimers();
+      onlineInFlight = false;
+      checkBtn.disabled = false;
+      onlineStatusCard.classList.remove("is-error");
+      setOnlineStatus("在线体检 · 真实分析", "分析时间较长，可稍后手动重试。",
+        onlineTaskId ? "任务编号 " + onlineTaskId : "", true);
+      return;
+    }
+    let res;
+    try {
+      const url = /^https?:\/\//i.test(onlinePollUrl || "")
+        ? onlinePollUrl : API_BASE + (onlinePollUrl || "");
+      res = await fetch(url);
+    } catch (err) {
+      setOnlineStatus("在线体检 · 真实分析", "轮询连接波动，正在重试…", null, false);
+      return; /* 瞬时断连继续轮询，至截止时间为止 */
+    }
+    if (res.status === 404) {
+      showOnlineError(await errorDetail(res) ||
+        "任务不存在或已过期（保留 1 小时），请重新提交。");
+      return;
+    }
+    if (!res.ok) {
+      setOnlineStatus("在线体检 · 真实分析",
+        "查询任务状态失败（HTTP " + res.status + "），正在重试…", null, false);
+      return; /* 瞬时错误继续轮询；截止后走超时文案 */
+    }
+    let data;
+    try {
+      data = await res.json();
+    } catch (err) {
+      setOnlineStatus("在线体检 · 真实分析", "任务状态响应无法解析，正在重试…", null, false);
+      return;
+    }
+    if (data.status === "queued" || data.status === "running") {
+      /* 状态如实显示：queued 就写排队中 */
+      onlineStatusCard.classList.remove("is-error");
+      setOnlineStatus("在线体检 · 真实分析",
+        data.status === "queued" ? "排队中" : "分析中", null, false);
+      return;
+    }
+    if (data.status === "done") {
+      stopOnlineTimers();
+      onlineInFlight = false;
+      checkBtn.disabled = false;
+      renderOnlineReport(data.result);
+      return;
+    }
+    if (data.status === "failed") {
+      showOnlineError(data.error || "体检执行失败，请稍后重试");
+      return;
+    }
+    /* 未知状态：如实显示并继续轮询 */
+    setOnlineStatus("在线体检 · 真实分析", "当前状态：" + data.status, null, false);
+  }
+
+  /* 服务端错误详情（422 detail 为校验数组、429/404 为字符串），照实展示 */
+  async function errorDetail(res) {
+    try {
+      const body = await res.json();
+      const detail = body && body.detail;
+      if (!detail) return "";
+      if (typeof detail === "string") return detail;
+      if (Array.isArray(detail) && detail.length && detail[0] && detail[0].msg) {
+        return String(detail[0].msg).replace(/^Value error,\s*/, "");
+      }
+      return "";
+    } catch (err) {
+      return "";
+    }
+  }
+
+  function renderOnlineReport(result) {
+    const text = result && typeof result.rendered_text === "string"
+      ? result.rendered_text : "";
+    if (!text.trim()) {
+      showOnlineError("体检服务返回的报告内容为空，请稍后重试。");
+      return;
+    }
+    onlineStatusCard.classList.remove("is-error");
+    onlineStatus.hidden = true;
+    onlineReportPre.textContent = text; /* 原样渲染，不增删改 */
+    onlineReport.hidden = false;
+    onlineReport.scrollIntoView({ behavior: REDUCED_MOTION ? "auto" : "smooth", block: "start" });
+  }
+
+  async function submitOnlineCheck(description) {
+    onlineInFlight = true;
+    checkBtn.disabled = true;
+    onlineTaskId = null;
+    onlinePollUrl = null;
+    reportWrap.hidden = true;
+    analyzePanel.hidden = true;
+    onlineReport.hidden = true;
+    onlineStatusCard.classList.remove("is-error");
+    setOnlineStatus("在线体检 · 真实分析", "正在提交项目描述…", "已等待 0 秒", false);
+    onlineStatus.scrollIntoView({ behavior: REDUCED_MOTION ? "auto" : "smooth", block: "center" });
+    startOnlineElapsed();
+    let res;
+    try {
+      res = await fetch(API_BASE + "/api/checkup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: description })
+      });
+    } catch (err) {
+      showOnlineError("无法连接体检服务（" + API_BASE + "）。请确认服务已启动；演示数据可用下方典型案例卡片离线查看。");
+      return;
+    }
+    if (res.status === 202) {
+      let data;
+      try {
+        data = await res.json();
+      } catch (err) {
+        showOnlineError("体检服务响应无法解析，请稍后重试。");
+        return;
+      }
+      onlineTaskId = data.task_id || null;
+      onlinePollUrl = data.poll_url || "/api/tasks/" + onlineTaskId;
+      onlineStatusCard.classList.remove("is-error");
+      setOnlineStatus("在线体检 · 真实分析", "排队中", null, false);
+      startPolling();
+      return;
+    }
+    if (res.status === 422) {
+      showOnlineError(await errorDetail(res) || "提交被拒收，请检查项目描述后重试。");
+      return;
+    }
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("Retry-After");
+      showOnlineError((await errorDetail(res) || "提交过于频繁，请稍后再试。") +
+        (retryAfter ? " 约 " + retryAfter + " 秒后可重试。" : ""));
+      return;
+    }
+    showOnlineError("体检服务返回异常状态（HTTP " + res.status + "），请稍后重试。");
+  }
+
+  /* ---------- 体检流程（R6 双模式） ---------- */
   function runCheck() {
-    if (!analyzePanel.hidden) return; // 演示动画进行中，忽略重复提交
+    if (onlineInFlight) return;          // 在线体检进行中，忽略重复提交
+    if (!analyzePanel.hidden) return;    // 演示动画进行中，忽略重复提交
     const text = input.value.trim();
 
     if (!text) {
@@ -510,22 +733,33 @@
 
     const matched = findMatchedCase(text);
     if (matched) {
+      /* 演示数据路径：预置案例离线渲染（R6 前行为保持不变） */
       setActiveCard(matched.id);
       setStatus("");
+      onlineStatus.hidden = true;
+      onlineReport.hidden = true;
       if (REDUCED_MOTION) {
         showReport(matched);
       } else {
         playAnalyze(function () { showReport(matched); });
       }
-    } else {
-      setStatus("");
-      reportWrap.hidden = true;
-      if (REDUCED_MOTION) {
-        showNotice();
-      } else {
-        playAnalyze(showNotice);
-      }
+      return;
     }
+
+    /* 真实分析路径：任意描述提交在线服务（长度阈值与后端校验口径一致） */
+    if (text.length < MIN_DESC_CHARS) {
+      setStatus("项目描述过短（当前 " + text.length + " 字），至少 20 字后再提交在线体检。", true);
+      input.focus();
+      return;
+    }
+    if (text.length > MAX_DESC_CHARS) {
+      setStatus("项目描述过长（当前 " + text.length + " 字），上限 2000 字。", true);
+      input.focus();
+      return;
+    }
+    setActiveCard(null);
+    setStatus("");
+    submitOnlineCheck(text);
   }
 
   /* ---------- 事件绑定与初始化 ---------- */
@@ -570,7 +804,12 @@
     setStatus("");
     setActiveCard(null);
     reportWrap.hidden = true;
-    notice.hidden = true;
+    stopOnlineTimers();
+    onlineInFlight = false;
+    onlineTaskId = null;
+    onlinePollUrl = null;
+    onlineStatus.hidden = true;
+    onlineReport.hidden = true;
     clearInterval(analyzeTimer);
     clearTimeout(analyzeFallbackTimer);
     analyzePanel.hidden = true;
@@ -578,9 +817,9 @@
     input.focus();
   });
 
-  noticeBack.addEventListener("click", function () {
-    notice.hidden = true;
-    document.getElementById("presets").scrollIntoView({ behavior: "smooth", block: "start" });
+  /* 在线体检失败/超时后的「重新提交」：按当前输入重新走一遍双模式判定 */
+  onlineRetryBtn.addEventListener("click", function () {
+    runCheck();
   });
 
   renderCases();
