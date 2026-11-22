@@ -33,7 +33,10 @@
 
       <form id="check-form" class="check-form" novalidate>
         <div class="field">
-          <label for="project-input">项目描述</label>
+          <div class="field-label-row">
+            <label for="project-input">项目描述</label>
+            <span class="mode-badge mode-online">真实分析 · 在线体检</span>
+          </div>
           <textarea id="project-input" rows="7"
             placeholder="例如：我是某县某镇某村人居环境整治项目的申报人。我村常住人口约1200人……（也可以点击下方典型案例，一键填入）"></textarea>
           <p class="char-count" id="char-count" aria-live="polite">0 字</p>
@@ -43,11 +46,31 @@
           <button type="button" class="btn btn-ghost" id="random-btn">随机生成项目描述</button>
           <button type="button" class="btn btn-ghost" id="clear-btn">清空</button>
         </div>
-        <p class="form-hint">本页面为纯前端静态演示：内容不出本机、不上传任何数据；体检结果来自下方典型案例的静态报告。</p>
+        <p class="form-hint">双模式说明：在上方输入框写入的描述将提交在线体检服务进行「真实分析」（描述内容会发送至体检服务）；下方典型案例卡片为「演示数据」，点击填入后走离线渲染，内容不出本机。</p>
       </form>
     </section>
 
-    <!-- 模拟体检过程（演示动画，非真实推理） -->
+    <!-- 在线体检状态条（真实分析：提交→轮询→渲染；状态如实显示 queued/running） -->
+    <section class="online-status" id="online-status" hidden aria-label="在线体检进度">
+      <div class="online-status-card" role="status" aria-live="polite">
+        <p class="online-status-title" id="online-status-title">在线体检 · 真实分析</p>
+        <p class="online-status-text" id="online-status-text">正在提交项目描述…</p>
+        <p class="online-status-meta" id="online-status-meta">已等待 0 秒</p>
+        <div class="online-status-actions" id="online-status-actions" hidden>
+          <button type="button" class="btn btn-ghost" id="online-retry-btn">重新提交</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 在线体检报告（真实分析结果：服务端 rendered_text 原样渲染，不增删改） -->
+    <section class="online-report" id="online-report" hidden aria-label="在线体检报告">
+      <div class="online-report-card">
+        <p class="online-report-title">在线体检报告（真实分析）</p>
+        <pre class="online-report-pre" id="online-report-pre" tabindex="0"></pre>
+      </div>
+    </section>
+
+    <!-- 模拟体检过程（演示动画，非真实推理；仅预置案例离线模式使用） -->
     <section class="analyze" id="analyze" hidden aria-label="体检进行中（演示动画）">
       <div class="analyze-card">
         <p class="analyze-title">体检进行中</p>
@@ -70,7 +93,7 @@
 
     <!-- ② 典型案例 -->
     <section class="presets" id="presets" aria-labelledby="presets-title">
-      <h2 id="presets-title" class="section-title">典型案例（点击即测）</h2>
+      <h2 id="presets-title" class="section-title">典型案例（点击即测）<span class="mode-badge mode-offline">演示数据 · 离线报告</span></h2>
       <p class="section-sub">三个案例均改编自审计公告真实条目（案例标注表），点击卡片会把完整项目描述填入上方输入框。</p>
       <ul class="case-list" id="case-list"><!-- 由 js/app.js 渲染 --></ul>
     </section>
@@ -241,15 +264,6 @@
           </ul>
         </div>
       </details>
-    </section>
-
-    <!-- 未命中提示 -->
-    <section class="notice" id="notice" hidden>
-      <div class="notice-card" role="status">
-        <p class="notice-title">未在演示语料库中识别到相关政策</p>
-        <p>演示版收录的政策语料范围有限，暂时无法为这份描述生成体检报告——这只说明该场景不在演示覆盖范围内，<strong>不代表项目本身有问题</strong>。想立刻查看报告效果？点击上方「随机生成项目描述」，或任选一条典型案例卡片。</p>
-        <button type="button" class="btn btn-ghost" id="notice-back">回到典型案例</button>
-      </div>
     </section>
 
     <!-- ③ 四段式体检报告 -->
