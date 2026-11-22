@@ -51,6 +51,19 @@ def test_disallowed_origin_rejected() -> None:
     assert "access-control-allow-origin" not in simple.headers
 
 
+def test_429_retry_after_exposed_cross_origin() -> None:
+    """429 的 Retry-After 在跨源下可读（CORS expose_headers，PR#104 预审缺口）。"""
+    http = TestClient(create_app(rate_limit_capacity=1))
+    first = http.post("/api/checkup", json=VALID,
+                      headers={"Origin": PAGES_ORIGIN})
+    assert first.status_code == 202
+    limited = http.post("/api/checkup", json=VALID,
+                        headers={"Origin": PAGES_ORIGIN})
+    assert limited.status_code == 429
+    assert limited.headers.get("access-control-expose-headers") == "Retry-After"
+    assert "retry-after" in limited.headers
+
+
 def test_local_dev_origins_in_allowlist() -> None:
     """本地开发端口（http.server 8080 / Mock 8000）在白名单（任务书 R6 依赖）。"""
     for origin in ("http://127.0.0.1:8080", "http://localhost:8000"):
