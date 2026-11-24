@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=375, initial-scale=1">
+<title>粤策哨 · 微信小程序设计原型（阶段 A）</title>
+<style>
+  /* 视觉规范：取自 docs/css/style.css 的 :root 色板，一一映射（见设计文档 §3.1） */
+  :root{
+    --paper:#f7f2e9; --paper-deep:#efe6d4; --card:#fffdf6;
+    --ink:#2b2620; --ink-soft:#57513f; --ink-faint:#6b6350;
+    --line:#ddd3bc; --line-soft:#e9e0cc;
+    --seal:#a23327; --seal-deep:#7e251c; --seal-tint:#f6e3dc;
+    --bamboo:#2f6d4e; --bamboo-tint:#e3efe7;
+    --amber:#7a5410; --amber-tint:#f6ecd4;
+    --ash:#615c4c; --ash-tint:#ebe7db;
+    --radius:12px; --radius-sm:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:#4a453c; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--ink); display:flex; flex-direction:column; align-items:center;
+    padding:24px 0 60px; min-height:100vh;
+  }
+  .stage-hint{color:#cfc7b6;font-size:13px;margin:0 0 14px;text-align:center;line-height:1.7;padding:0 16px}
+  .stage-hint b{color:#fff}
+  .phone{
+    width:375px; background:var(--paper); border-radius:28px; overflow:hidden;
+    box-shadow:0 18px 60px rgba(0,0,0,.45); position:relative;
+  }
+  .statusbar{
+    height:30px; background:var(--card); display:flex; align-items:center;
+    justify-content:space-between; padding:0 18px; font-size:12px; color:var(--ink-faint);
+  }
+  .navbar{
+    height:46px; background:var(--card); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between; padding:0 14px;
+  }
+  .nav-title{font-weight:700;font-size:15px;letter-spacing:.03em}
+  .nav-title::before{
+    content:"粤";display:inline-flex;align-items:center;justify-content:center;
+    width:22px;height:22px;background:var(--seal);color:#fff;border-radius:5px;
+    font-size:12px;margin-right:7px;vertical-align:middle;
+  }
+  .capsule{display:flex;gap:6px}
+  .capsule i{width:16px;height:16px;border:1px solid var(--line);border-radius:50%;display:block}
+  /* 顶部页签：模拟三页切换 */
+  .tabs{display:flex;background:var(--card);border-bottom:1px solid var(--line)}
+  .tabs button{
+    flex:1;appearance:none;border:0;background:none;padding:11px 0;font-size:13px;
+    color:var(--ink-soft);cursor:pointer;position:relative;
+  }
+  .tabs button.on{color:var(--seal);font-weight:700}
+  .tabs button.on::after{
+    content:"";position:absolute;left:24%;right:24%;bottom:0;height:3px;background:var(--seal);border-radius:3px 3px 0 0;
+  }
+  .page{display:none;padding:18px 16px 26px;min-height:600px}
+  .page.on{display:block}
+  h2.band{margin:0 0 14px;font-size:18px;font-family:"Songti SC","SimSun",serif}
+  .redhead{border-top:6px solid var(--seal);padding-top:10px;margin-bottom:16px}
+  .redhead .sub{font-size:12px;color:var(--ink-faint);margin-top:2px}
+  label.fld{display:block;font-size:14px;font-weight:600;margin:0 0 6px}
+  textarea{
+    width:100%;min-height:132px;resize:none;border:1.5px solid var(--line);border-radius:var(--radius-sm);
+    padding:11px 12px;font-size:14px;line-height:1.7;font-family:inherit;background:var(--card);color:var(--ink);
+  }
+  textarea:focus{outline:none;border-color:var(--seal);box-shadow:0 0 0 3px rgba(162,51,39,.12)}
+  textarea.is-error{border-color:var(--seal);box-shadow:0 0 0 3px rgba(162,51,39,.16)}
+  .counter{text-align:right;font-size:12px;color:var(--ink-faint);margin:6px 1px 0}
+  .counter.bad{color:var(--seal-deep);font-weight:700}
+  .ftip{min-height:18px;font-size:12.5px;color:var(--seal-deep);margin:6px 1px 0}
+  .actions{display:flex;gap:10px;margin-top:10px}
+  button.btn{
+    appearance:none;border:1.5px solid transparent;border-radius:var(--radius-sm);
+    padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
+  .btn-primary{background:var(--seal);color:#fff;flex:1}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+  .btn-ghost{background:var(--card);color:var(--ink-soft);border-color:var(--line)}
+  .sec-label{font-size:13px;color:var(--ink-faint);margin:22px 0 10px;display:flex;align-items:center;gap:8px}
+  .sec-label::after{content:"";flex:1;height:1px;background:var(--line)}
+  .case-card{
+    background:var(--card);border:1px solid var(--line-soft);border-left:4px solid var(--seal);
+    border-radius:var(--radius-sm);padding:11px 13px;margin-bottom:9px;cursor:pointer;
+  }
+  .case-card:active{background:var(--seal-tint)}
+  .case-tag{font-size:12px;color:var(--seal);font-weight:700}
+  .case-title{font-size:14px;font-weight:600;margin:3px 0 2px}
+  .case-src{font-size:11.5px;color:var(--ink-faint)}
+  /* 进度页状态卡 */
+  .status-card{
+    background:var(--card);border:1px solid var(--line);border-top:3px solid var(--seal);
+    border-radius:var(--radius);padding:16px 18px;box-shadow:0 6px 18px rgba(43,38,32,.07);margin-top:6px;
+  }
+  .status-card.is-error{border-top-color:var(--seal-deep);background:#fdf6ef}
+  .st-title{font-weight:700;font-size:16.5px;margin:0 0 5px;font-family:"Songti SC","SimSun",serif}
+  .status-card.is-error .st-title{color:var(--seal-deep)}
+  .st-text{font-size:14.5px;color:var(--ink-soft);line-height:1.7;margin:0 0 3px}
+  .st-meta{font-size:12.5px;color:var(--ink-faint);margin:0}
+  .st-actions{margin-top:14px;display:none}
+  .st-actions.show{display:flex;gap:10px}
+  .demo-bar{margin-top:20px;background:var(--card);border:1px dashed var(--line);border-radius:var(--radius-sm);padding:12px}
+  .demo-bar h4{margin:0 0 8px;font-size:13px;color:var(--ink-faint);font-weight:600}
+  .demo-bar .row{display:flex;flex-wrap:wrap;gap:7px}
+  .demo-bar button{
+    appearance:none;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);
+    border-radius:20px;padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;
+  }
+  .demo-bar button.Main{background:var(--seal);color:#fff;border-color:var(--seal);font-weight:700}
+  /* 报告页 */
+  .rpt-head{border-top:6px solid var(--seal);padding-top:10px;margin-bottom:12px}
+  .rpt-title{font-size:20px;font-weight:700;font-family:"Songti SC","SimSun",serif;letter-spacing:.04em;margin:0 0 10px;display:flex;align-items:center;gap:9px}
+  .rpt-title .seal-box{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--seal);color:#fff;border-radius:5px;font-size:15px}
+  .rpt-meta{font-size:13px;color:var(--ink-soft);line-height:1.7}
+  .rpt-note{font-size:12.5px;color:var(--ink-faint);line-height:1.6;background:var(--paper-deep);border-radius:var(--radius-sm);padding:8px 10px;margin:8px 0 0}
+  .seg{display:flex;gap:5px;margin:14px 0 0}
+  .seg button{
+    flex:1;appearance:none;border:1px solid var(--line);background:var(--card);border-radius:20px;
+    padding:7px 2px;font-size:11.5px;color:var(--ink-soft);cursor:pointer;font-family:inherit;
+  }
+  .seg button.on{background:var(--seal);color:#fff;border-color:var(--seal);font-weight:700}
+  .seg-tip{font-size:11px;color:var(--ink-faint);margin:6px 2px 0}
+  .sec{display:none;margin-top:14px}
+  .sec.on{display:block}
+  .sec h3{font-size:17px;margin:0 0 8px;font-family:"Songti SC","SimSun",serif;display:flex;align-items:center;gap:8px}
+  .sec-no{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:2px solid var(--seal);color:var(--seal);border-radius:50%;font-size:13px;font-weight:700}
+  .sec-note{font-size:13px;color:var(--ink-faint);line-height:1.6;margin:0 0 12px}
+  .policy-item{background:var(--card);border:1px solid var(--line-soft);border-left:4px solid var(--bamboo);border-radius:var(--radius-sm);padding:11px 12px;margin-bottom:10px}
+  .p-wenh{font-size:14px;font-weight:700;color:var(--seal-deep)}
+  .p-status{font-size:11px;color:var(--bamboo);background:var(--bamboo-tint);border-radius:10px;padding:1px 8px;margin-left:6px}
+  .p-title{font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin:5px 0}
+  .p-clause{font-size:13.5px;line-height:1.7;margin:6px 0 4px}
+  .p-clause b{color:var(--seal)}
+  .p-meta{font-size:11.5px;color:var(--ink-faint)}
+  .empty-hit{background:var(--ash-tint);border-radius:var(--radius-sm);padding:12px;font-size:13px;color:var(--ash);line-height:1.7}
+  .miss-item,.adv-item{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:9px;font-size:13.5px;line-height:1.7}
+  .miss-name{font-weight:700;margin-bottom:3px}
+  .miss-basis{font-size:12.5px;color:var(--ink-soft)}
+  .adv-item::before{content:"• ";color:var(--seal);font-weight:700}
+  /* 报告尾：AI 标识 + 免责声明（不可隐藏） */
+  .rpt-foot{margin-top:20px;border-top:1px dashed var(--line);padding-top:14px}
+  .ai-note{font-size:13.5px;font-weight:600;color:var(--ash);text-align:center;line-height:1.6;margin:0 0 10px}
+  .disclaimer{
+    border:1px solid var(--seal);border-radius:var(--radius-sm);background:var(--seal-tint);
+    color:var(--seal-deep);padding:11px 13px;font-size:14px;font-weight:600;line-height:1.65;margin:0;
+  }
+  .src-note{font-size:11.5px;color:var(--ink-faint);line-height:1.6;margin:10px 0 0}
+  .mock-tag{display:inline-block;font-size:11px;color:var(--amber);background:var(--amber-tint);border:1px solid #dcc189;border-radius:10px;padding:1px 8px;margin-left:6px}
+</style>
+</head>
+<body>
+  <p class="stage-hint"><b>粤策哨 · 微信小程序设计原型（阶段 A）</b><br>单文件可点击原型 · 375px 模拟 · 三页切换 · 报告文本取自 data.js（C139）</p>
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ 100%</span></div>
+    <div class="navbar"><span class="nav-title">申报前自查辅助工具</span><span class="capsule"><i></i><i></i></span></div>
+    <div class="tabs">
+      <button class="on" data-p="input">输入页</button>
+      <button data-p="progress">任务进度</button>
+      <button data-p="report">报告页</button>
+    </div>
+
+    <!-- ============ 输入页 ============ -->
+    <section class="page on" id="page-input">
+      <div class="redhead">
+        <h2 class="band">粤策哨 · 申报前自查辅助工具</h2>
+        <div class="sub">县域强村公司与合作社 · 申报前自查辅助参考</div>
+      </div>
+      <label class="fld" for="desc">请在下方填写项目描述</label>
+      <textarea id="desc" placeholder="简介＋资金用途＋建设内容">我是某园区管委会的经办人员。园区收到一笔对口帮扶项目资金，批复用途为园区基础设施配套，包括道路和管网工程。近期拟将其中的一部分先用于园区其他急需开支，待后续资金到位再调整回原项目。该项资金年初已下达并纳入园区预算，园区其他开支需求已列入年度资金计划。调整安排将同步在园区账务中予以单独反映和核算。请审核。</textarea>
+      <div class="counter" id="counter">0 / 2000 字</div>
+      <div class="ftip" id="ftip"></div>
+      <div class="actions">
+        <button class="btn btn-primary" id="startBtn">开始自查</button>
+        <button class="btn btn-ghost" id="clearBtn">清空</button>
+      </div>
+
+      <div class="sec-label">离线演示（断网/评审可看）</div>
+      <div class="case-card" data-case="park">
+        <div class="case-tag">产业园基础配套类</div>
+        <div class="case-title">园区基础设施配套资金，拟先用于其他开支</div>
+        <div class="case-src">案例标注表 C139 · 点击查看烘焙报告</div>
+      </div>
+      <div class="case-card" data-case="equipment">
+        <div class="case-tag">设备购置类</div>
+        <div class="case-title">项目经费租车购车保障方案</div>
+        <div class="case-src">案例标注表 C83 · 点击查看烘焙报告</div>
+      </div>
+      <div class="case-card" data-case="village">
+        <div class="case-tag">人居环境类</div>
+        <div class="case-title">农村公厕与户厕改造，分批延后实施</div>
+        <div class="case-src">案例标注表 C02 · 点击查看烘焙报告</div>
+      </div>
+    </section>
+
+    <!-- ============ 任务进度页 ============ -->
+    <section class="page" id="page-progress">
+      <div class="sec-label" style="margin-top:0">在线自查流程</div>
+      <div class="status-card" id="statusCard">
+        <p class="st-title" id="stTitle">在线体检 · 真实分析</p>
+        <p class="st-text" id="stText">正在提交项目描述…</p>
+        <p class="st-meta" id="stMeta">已等待 0 秒</p>
+      </div>
+      <div class="st-actions" id="stActions">
+        <button class="btn btn-primary" id="retryBtn" style="flex:1">重新提交</button>
+        <button class="btn btn-ghost" id="backBtn">返回输入</button>
+      </div>
+
+      <div class="demo-bar">
+        <h4>状态演示台 <span class="mock-tag">原型专用</span></h4>
+        <div class="row">
+          <button class="Main" id="demoRun">▶ 模拟提交（排队中→分析中→完成）</button>
+        </div>
+        <h4 style="margin-top:12px">错误态查看入口</h4>
+        <div class="row">
+          <button data-err="failed">failed</button>
+          <button data-err="404">404 过期</button>
+          <button data-err="429">429 限流</button>
+          <button data-err="timeout">15 分钟超时</button>
+          <button data-err="network">网络错误</button>
+          <button data-err="422">422 拒收</button>
+          <button data-err="poll">轮询波动</button>
+          <button data-err="parse">响应无法解析</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 报告页 ============ -->
+    <section class="page" id="page-report">
+      <div class="rpt-head">
+        <h2 class="rpt-title"><span class="seal-box">粤</span>粤策哨 · 四段式申报前自查报告</h2>
+        <div class="rpt-meta">体检输入：「产业园基础配套类」园区基础设施配套资金，拟先用于其他开支</div>
+        <details class="rpt-note">
+          <summary>案例来源 · 链接 · 生成方式</summary>
+          <div style="margin-top:6px;line-height:1.7">案例来源：案例标注表 C139（改编自《紫金县2019年度县级预算执行和其他财政收支的审计工作报告》，2020-09-15；标注状态：已复核）<br>生成方式：静态预置输出（本页内置，无模型推理）</div>
+        </details>
+        <p class="rpt-note">公告原文表述为：园区管委会对 1500 万元对口帮扶项目资金未按资金审批用途使用；另有园区改变具体建设项目用途未履行审批程序。演示输入为案例标注表「改编后申报场景描述」原文。2026-11-21 与活系统输出对齐。该情形处于检测边界（三次运行 hit/hit/miss，LLM 蕴含轮次抖动），在线模式以实时结果为准。</p>
+      </div>
+
+      <div class="seg">
+        <button class="on" data-s="1">适用政策 2</button>
+        <button data-s="2">负面命中 0</button>
+        <button data-s="3">材料缺项 2</button>
+        <button data-s="4">修改建议 3</button>
+      </div>
+      <div class="seg-tip">四段全文切换展示（数据逐字取自 data.js · C139）</div>
+
+      <!-- ① 适用政策清单 -->
+      <div class="sec on" id="sec-1">
+        <h3><span class="sec-no">1</span>适用政策清单</h3>
+        <p class="sec-note">对照第①段命中的现行政策文件，列出建议核对的适用口径（提示性质）。</p>
+        <div class="policy-item">
+          <div><span class="p-wenh">财农〔2026〕10号</span><span class="p-status">现行有效</span></div>
+          <div class="p-title">财政部 农业农村部 国家发展改革委 国家民委 国家林草局关于印发《中央财政常态化帮扶资金管理办法》的通知</div>
+          <div class="p-clause"><b>第十九条</b>　帮扶资金实施项目优先形成固定资产，具备条件的应尽量确权到村。各地要加强项目资产全过程管理，项目谋划时明确资产管护责任，完工验收后做好资产确权移交，加强资产后续运营管护，规范开展收益分配。</div>
+          <div class="p-meta">发布日期 2026-04-02（registry 发布日期；效力状态：有效）</div>
+          <div class="p-meta">对口帮扶资金项目管理口径（活系统①段第1条〔明确适用〕）。</div>
+        </div>
+        <div class="policy-item">
+          <div><span class="p-wenh">财农〔2026〕10号</span><span class="p-status">现行有效</span></div>
+          <div class="p-title">财政部 农业农村部 国家发展改革委 国家民委 国家林草局关于印发《中央财政常态化帮扶资金管理办法》的通知</div>
+          <div class="p-clause"><b>第四条</b>　（三）支持补齐必要的小型公益性基础设施建设短板。支持道路、饮水保障、排水等村（易地扶贫搬迁集中安置区、欠发达国有农场和林场）内户外小型公益性基础设施建设，解决影响群众基本生产生活的突出困难，促进改善农村人居环境。</div>
+          <div class="p-meta">发布日期 2026-04-02（registry 发布日期；效力状态：有效）</div>
+          <div class="p-meta">道路等小型公益性基础设施支持口径（活系统①段第2条〔明确适用〕）。</div>
+        </div>
+      </div>
+
+      <!-- ② 负面清单命中提示 -->
+      <div class="sec" id="sec-2">
+        <h3><span class="sec-no">2</span>负面清单命中提示</h3>
+        <p class="sec-note">命中分两级：规则命中、疑似命中（建议对照原文）。每条命中左侧为材料原文里命中的那一句、右侧为条款原文摘录，两栏并排便于对照。</p>
+        <div class="empty-hit">本段未命中（0 条）。②段未命中（规则引擎对该表述无锚点，LLM 蕴含存在轮次抖动，三次运行 hit/hit/miss）——按基准如实烘焙 miss，不为演示效果改用历史 hit 版本；在线模式以实时结果为准。</div>
+      </div>
+
+      <!-- ③ 材料缺项清单 -->
+      <div class="sec" id="sec-3">
+        <h3><span class="sec-no">3</span>材料缺项清单</h3>
+        <p class="sec-note">对照第①段命中的现行政策文件，列出建议核对、补齐的申报材料（清单为提示性质）。</p>
+        <div class="miss-item">
+          <div class="miss-name">项目库入库证明材料</div>
+          <div class="miss-basis">依据：财农〔2026〕10号第十四条（有效，发布日期 2026-04-02）——项目应当从已建立的帮扶资金项目库中选择，需要提供项目入库的相关证明材料。</div>
+        </div>
+        <div class="miss-item">
+          <div class="miss-name">项目实施方案</div>
+          <div class="miss-basis">依据：财农〔2026〕10号第十五条（有效，发布日期 2026-04-02）——跨年度实施的项目，应在实施方案中明确各年度建设内容及资金投入金额。</div>
+        </div>
+      </div>
+
+      <!-- ④ 修改建议 -->
+      <div class="sec" id="sec-4">
+        <h3><span class="sec-no">4</span>修改建议</h3>
+        <p class="sec-note">以下为申报表述层面的改进建议（建议口吻，不做任何判定）。</p>
+        <div class="adv-item">建议在描述中明确项目的具体管护机制和管护经费来源，以符合政策要求。</div>
+        <div class="adv-item">建议详细说明拟调整使用的资金将如何用于园区其他急需开支，并确保这些开支符合资金使用规定。</div>
+        <div class="adv-item">建议补充项目前期设计、评审、招标等与项目管理直接相关的支出情况，以便更好地匹配政策要求。</div>
+      </div>
+
+      <!-- 报告尾：不可隐藏 -->
+      <div class="rpt-foot">
+        <p class="ai-note">AI 生成标识：本报告由人工智能自动生成，仅供参考。</p>
+        <p class="disclaimer">免责声明：本报告仅为申报前自查辅助参考，不构成合规判定，请以政策法规原文及主管部门意见为准</p>
+        <p class="src-note">本报告为静态演示输出。文号、条款号、日期来源见「案例来源」；全部引用取自团队知识库真实条目，未作编造。</p>
+      </div>
+      <div class="actions" style="margin-top:14px"><button class="btn btn-ghost" id="rptBack" style="flex:1">返回输入框</button></div>
+    </section>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+  var MIN=20, MAX=2000;
+  var desc=document.getElementById('desc'), counter=document.getElementById('counter'), ftip=document.getElementById('ftip');
+  var pages={input:document.getElementById('page-input'),progress:document.getElementById('page-progress'),report:document.getElementById('page-report')};
+  var tabBtns=document.querySelectorAll('.tabs button');
+  function showPage(name){
+    for(var k in pages){ pages[k].classList.toggle('on',k===name); }
+    tabBtns.forEach(function(b){ b.classList.toggle('on',b.getAttribute('data-p')===name); });
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  tabBtns.forEach(function(b){ b.addEventListener('click',function(){ showPage(b.getAttribute('data-p')); }); });
+
+  function count(){
+    var n=desc.value.trim().length;
+    counter.textContent=n+' / '+MAX+' 字';
+    var bad=(n<MIN||n>MAX);
+    counter.classList.toggle('bad',bad);
+    desc.classList.toggle('is-error',bad);
+    ftip.textContent = n<MIN ? 'description 过短（至少 20 字），请按「简介＋资金用途＋建设内容」补全'
+                      : (n>MAX ? 'description 过长（上限 2000 字）' : '');
+    return n;
+  }
+  desc.addEventListener('input',count); count();
+  document.getElementById('clearBtn').addEventListener('click',function(){ desc.value=''; count(); desc.focus(); });
+
+  // 进度页状态卡
+  var card=document.getElementById('statusCard'), stTitle=document.getElementById('stTitle'),
+      stText=document.getElementById('stText'), stMeta=document.getElementById('stMeta'),
+      stActions=document.getElementById('stActions');
+  function setStatus(title,text,meta,showRetry,isError){
+    stTitle.textContent=title; stText.textContent=text||'';
+    stMeta.textContent=meta===null?'':meta;
+    card.classList.toggle('is-error',!!isError);
+    stActions.classList.toggle('show',!!showRetry);
+  }
+  var timers=[]; function clearTimers(){ timers.forEach(clearTimeout); timers=[]; }
+  var startedAt=0, ticker=null;
+  function startClock(){ startedAt=Date.now(); clearInterval(ticker); ticker=setInterval(function(){ stMeta.textContent='已等待 '+Math.floor((Date.now()-startedAt)/1000)+' 秒'; },1000); }
+  function stopClock(){ clearInterval(ticker); ticker=null; }
+
+  // 模拟提交：排队中 -> 分析中 -> 完成（报告页）
+  function runFlow(){
+    clearTimers(); stopClock();
+    var n=count();
+    if(n<MIN||n>MAX){ showPage('input'); desc.focus(); return; }
+    showPage('progress');
+    setStatus('在线体检 · 真实分析','正在提交项目描述…','已等待 0 秒',false,false);
+    startClock();
+    timers.push(setTimeout(function(){ setStatus('在线体检 · 真实分析','排队中',null,false,false); },900));
+    timers.push(setTimeout(function(){ setStatus('在线体检 · 真实分析','分析中',null,false,false); },2200));
+    timers.push(setTimeout(function(){ stopClock(); setStatus('在线体检 · 真实分析','分析中',null,false,false); showPage('report'); },3800));
+  }
+  document.getElementById('startBtn').addEventListener('click',runFlow);
+  document.getElementById('demoRun').addEventListener('click',runFlow);
+  document.getElementById('retryBtn').addEventListener('click',runFlow);
+  document.getElementById('backBtn').addEventListener('click',function(){ showPage('input'); });
+  document.getElementById('rptBack').addEventListener('click',function(){ showPage('input'); });
+
+  // 错误态查看入口（文案逐字对齐 docs/js/app.js）
+  var TASK='任务编号 demo-20261122-001';
+  var errors={
+    failed:{t:'在线体检 · 未完成',x:'体检执行失败，请稍后重试',m:TASK,e:true},
+    '404':{t:'在线体检 · 未完成',x:'任务不存在或已过期（保留 1 小时），请重新提交。',m:TASK,e:true},
+    '429':{t:'在线体检 · 未完成',x:'提交过于频繁，请稍后再试。 约 1800 秒后可重试。',m:null,e:true},
+    timeout:{t:'在线体检 · 真实分析',x:'分析时间较长，可稍后手动重试。',m:TASK,e:false},
+    network:{t:'在线体检 · 未完成',x:'无法连接体检服务（http://127.0.0.1:8000）。请确认服务已启动；演示数据可用下方典型案例卡片离线查看。',m:null,e:true},
+    '422':{t:'在线体检 · 未完成',x:'提交被拒收，请检查项目描述后重试。',m:null,e:true},
+    poll:{t:'在线体检 · 真实分析',x:'轮询连接波动，正在重试…',m:null,e:false,noRetry:true},
+    parse:{t:'在线体检 · 真实分析',x:'任务状态响应无法解析，正在重试…',m:null,e:false,noRetry:true}
+  };
+  document.querySelectorAll('[data-err]').forEach(function(b){
+    b.addEventListener('click',function(){
+      clearTimers(); stopClock(); showPage('progress');
+      var s=errors[b.getAttribute('data-err')];
+      setStatus(s.t,s.x,s.m,!s.noRetry,s.e);
+    });
+  });
+
+  // 离线案例卡片 -> 报告页（三案例均指向 data.js 既有报告，此处展示 C139 四段）
+  document.querySelectorAll('.case-card').forEach(function(c){
+    c.addEventListener('click',function(){ showPage('report'); });
+  });
+
+  // 报告四段切换
+  var segBtns=document.querySelectorAll('.seg button');
+  function showSeg(s){
+    segBtns.forEach(function(x){ x.classList.toggle('on',x.getAttribute('data-s')===s); });
+    ['1','2','3','4'].forEach(function(i){ document.getElementById('sec-'+i).classList.toggle('on',i===s); });
+  }
+  segBtns.forEach(function(b){
+    b.addEventListener('click',function(){ showSeg(b.getAttribute('data-s')); });
+  });
+
+  // 评审深链：#progress / #report / #report-2 / #err-429 等，便于逐态截图与查阅
+  function applyHash(){
+    var h=(location.hash||'').replace(/^#/,''); if(!h) return;
+    if(h.indexOf('err-')===0){
+      showPage('progress'); var k=h.slice(4); var s=errors[k];
+      if(s){ clearTimers(); stopClock(); setStatus(s.t,s.x,s.m,!s.noRetry,s.e); }
+      return;
+    }
+    if(h==='report-foot'){
+      showPage('report'); showSeg('4');
+      var foot=document.querySelector('.rpt-foot');
+      if(foot) foot.scrollIntoView({block:'center'});
+      return;
+    }
+    if(h.indexOf('report-')===0){ showPage('report'); showSeg(h.slice(7)); return; }
+    if(pages[h]) showPage(h);
+  }
+  window.addEventListener('hashchange',applyHash); applyHash();
+})();
+</script>
+</body>
+</html>
