@@ -1,19 +1,54 @@
 /* ============================================================
-   粤策哨 · 静态演示版 · 交互逻辑（R6 前端双模式）
-   - 离线演示（演示数据）：预置案例卡片 → data.js 内置报告，无请求；
-   - 在线体检（真实分析）：输入框自由描述 → API_BASE 在线服务，
+   粤策哨 · 静态演示版 · 交互逻辑（R6 前端双模式 ＋ 阶段二工具型单页）
+   - 离线演示（演示数据）：「试试示例」小卡片 → data.js 内置报告，无请求；
+   - 在线体检（真实分析）：输入框自由描述 → apiBase 在线服务，
      提交 → 轮询 → 服务端 rendered_text 原样渲染。
+   服务地址优先级：?api= 参数 ＞ localStorage(yueceshao_api_base) ＞ 默认常量。
    红线：前端不生成、不补写、不美化任何报告内容——在线模式的一切
-   内容来自 API 响应，离线模式来自 data.js 既有数据。
+   内容来自 API 响应，离线模式来自 data.js 既有数据；
+   AI 生成标识行与免责声明在展示与复制中均完整保留。
    ============================================================ */
 
 (function () {
   "use strict";
 
-  /* ---------- 在线体检服务基址（单一常量，一行切换） ----------
-     开发默认本地 Mock：uvicorn app.main:app --port 8000；
+  /* ---------- 在线体检服务基址 ----------
+     优先级：URL 参数 ?api= ＞ localStorage（键 yueceshao_api_base）＞ 默认常量。
+     只接受 http(s) URL（new URL 校验，非法值静默降级到下一级，防注入）；
+     当前生效地址在页脚一行只读展示（textContent，不解析链接）。
+     默认本地 Mock：uvicorn app.main:app --port 8000；
      生产值由组长在部署时提供（备案域名），改本行即可。 */
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE_DEFAULT = "http://127.0.0.1:8000";
+  const API_BASE_STORAGE_KEY = "yueceshao_api_base";
+
+  function sanitizeApiBase(raw) {
+    if (typeof raw !== "string") return null;
+    const value = raw.trim();
+    if (!value) return null;
+    let parsed;
+    try {
+      parsed = new URL(value);
+    } catch (err) {
+      return null; /* 非 URL（javascript:/data:/相对串等）一律拒绝 */
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return value.replace(/\/+$/, ""); /* 去掉结尾斜杠，拼接路径不双斜杠 */
+  }
+
+  function resolveApiBase() {
+    let fromUrl = null;
+    try {
+      fromUrl = sanitizeApiBase(new URLSearchParams(window.location.search).get("api"));
+    } catch (err) { fromUrl = null; }
+    if (fromUrl) return fromUrl;
+    let fromStore = null;
+    try {
+      fromStore = sanitizeApiBase(window.localStorage.getItem(API_BASE_STORAGE_KEY));
+    } catch (err) { fromStore = null; } /* 隐私模式等读取异常按未设置处理 */
+    return fromStore || API_BASE_DEFAULT;
+  }
+
+  const apiBase = resolveApiBase();
 
   /* 在线体检参数（契约：轮询每 5 秒一次；客户端轮询上限 15 分钟） */
   const POLL_INTERVAL_MS = 5000;
@@ -29,7 +64,7 @@
   const randomBtn = document.getElementById("random-btn");
   const clearBtn = document.getElementById("clear-btn");
   const charCount = document.getElementById("char-count");
-  const caseList = document.getElementById("case-list");
+  const sampleRow = document.getElementById("sample-row");
   const reportWrap = document.getElementById("report-wrap");
   const reportBody = document.getElementById("report-body");
   const analyzePanel = document.getElementById("analyze");
@@ -43,6 +78,8 @@
   const onlineRetryBtn = document.getElementById("online-retry-btn");
   const onlineReport = document.getElementById("online-report");
   const onlineReportPre = document.getElementById("online-report-pre");
+  const copyOnlineBtn = document.getElementById("copy-online-btn");
+  const apiNote = document.getElementById("api-base-note");
 
   const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -58,6 +95,7 @@
   let onlineElapsedTimer = null;
   let onlineDeadline = 0;
   let onlineStartedAt = 0;
+  let onlineEtaText = ""; /* estimated_seconds 折算的「预计约 N 分钟」提示 */
 
   /* ---------- 工具函数 ---------- */
   function el(tag, className, text) {
@@ -132,6 +170,75 @@
     setTimeout(finish, duration + 400); // 兜底：极端节流环境（后台标签页等）也保证终值正确
   }
 
+  /* 预计耗时文案（estimated_seconds 为 UX 参考值非承诺）：≥60 秒折算分钟。 */
+  function formatEta(seconds) {
+    const s = Number(seconds);
+    if (!isFinite(s) || s <= 0) return "";
+    if (s >= 60) return "预计约 " + Math.max(1, Math.round(s / 60)) + " 分钟";
+    return "预计约 " + Math.round(s) + " 秒";
+  }
+
+  /* 状态条 meta：预计提示与已等待秒数并存（不做倒计时进度条）。 */
+  function elapsedText() {
+    const waited = Math.max(0, Math.floor((Date.now() - onlineStartedAt) / 1000));
+    return (onlineEtaText ? onlineEtaText + " · " : "") + "已等待 " + waited + " 秒";
+  }
+
+  /* ---------- 复制报告文本（在线/离线通用） ----------
+     复制内容与页面所见逐字一致（含 AI 生成标识行＋免责声明），不截断；
+     navigator.clipboard 优先，非安全上下文/失败降级 execCommand；
+     成功反馈「已复制」。 */
+  function copyReportText(text, btn) {
+    const LABEL = "复制报告文本";
+    function flash(message, ms) {
+      btn.textContent = message;
+      clearTimeout(btn._copyTimer);
+      btn._copyTimer = setTimeout(function () { btn.textContent = LABEL; }, ms);
+    }
+    function legacyCopy() {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+      document.body.removeChild(ta);
+      if (ok) { flash("已复制", 1800); } else { flash("复制失败，请手动选择文本", 2400); }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () { flash("已复制", 1800); },
+        legacyCopy);
+    } else {
+      legacyCopy();
+    }
+  }
+
+  /* 离线报告文本：从当前已渲染 DOM 取所见文本（四个段落全部计入——
+     临时展开切换视图，复制按钮/切换条等交互控件文字不计入），逐字一致。 */
+  function offlineReportText() {
+    const doc = reportBody.querySelector(".report-doc");
+    if (!doc) return "";
+    const sections = Array.prototype.slice.call(doc.querySelectorAll(".report-sec"));
+    const hiddenBackup = sections.map(function (s) { return s.hidden; });
+    const chrome = Array.prototype.slice.call(
+      doc.querySelectorAll(".report-tabs, .report-foot-actions"));
+    const displayBackup = chrome.map(function (n) { return n.style.display; });
+    sections.forEach(function (s) { s.hidden = false; });
+    chrome.forEach(function (n) { n.style.display = "none"; });
+    var text;
+    try {
+      text = doc.innerText;
+    } finally {
+      sections.forEach(function (s, i) { s.hidden = hiddenBackup[i]; });
+      chrome.forEach(function (n, i) { n.style.display = displayBackup[i]; });
+    }
+    return text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
   function findMatchedCase(text) {
     const n = normalize(text);
     if (!n) return null;
@@ -162,39 +269,35 @@
 
   function setActiveCard(id) {
     activeCaseId = id;
-    caseList.querySelectorAll(".case-card").forEach(function (card) {
+    sampleRow.querySelectorAll(".sample-card").forEach(function (card) {
       const active = card.dataset.caseId === id;
       card.classList.toggle("is-active", active);
       card.setAttribute("aria-pressed", active ? "true" : "false");
     });
   }
 
-  /* ---------- 典型案例卡片 ---------- */
-  function renderCases() {
+  /* ---------- 试试示例（弱化保留：输入框下方一行小卡片） ----------
+     点击即填入并直接走离线渲染（演示数据，内容不出本机），不抢主视觉。 */
+  function renderSamples() {
     PRESET_CASES.forEach(function (c) {
-      const li = el("li");
-      const card = el("button", "case-card");
+      const card = el("button", "sample-card");
       card.type = "button";
       card.dataset.caseId = c.id;
       card.setAttribute("aria-pressed", "false");
 
-      card.appendChild(el("span", "case-tag", c.tag));
-      card.appendChild(el("h3", "case-title", c.title));
-      card.appendChild(el("p", "case-desc", c.brief));
-      card.appendChild(el("p", "case-src", "案例来源：" + c.source));
-      card.appendChild(el("p", "case-fill-hint", "点击填入输入框 →"));
+      card.appendChild(el("span", "sample-tag", c.tag));
+      card.appendChild(el("span", "sample-title", c.title));
 
       card.addEventListener("click", function () {
+        if (onlineInFlight || !analyzePanel.hidden) return;
         input.value = c.inputText;
         updateCharCount();
-        setActiveCard(c.id);
-        setStatus("已填入「" + c.tag + "」案例描述，点击「开始体检」查看报告。");
-        input.focus();
-        input.scrollIntoView({ behavior: "smooth", block: "center" });
+        input.classList.remove("is-error");
+        setStatus("");
+        runCheck(); /* 预置案例命中 → 离线渲染对应报告（含 AI 行＋免责声明） */
       });
 
-      li.appendChild(card);
-      caseList.appendChild(li);
+      sampleRow.appendChild(card);
     });
   }
 
@@ -453,6 +556,12 @@
     }
     foot.appendChild(el("p", "report-disclaimer", "免责声明：" + DISCLAIMER_TEXT));
     const actions = el("div", "report-foot-actions");
+    const copyBtn = el("button", "btn btn-ghost btn-copy", "复制报告文本");
+    copyBtn.type = "button";
+    copyBtn.addEventListener("click", function () {
+      copyReportText(offlineReportText(), copyBtn);
+    });
+    actions.appendChild(copyBtn);
     const backBtn = el("button", "btn btn-ghost", "返回输入框");
     backBtn.type = "button";
     backBtn.addEventListener("click", function () {
@@ -551,11 +660,10 @@
 
   function startOnlineElapsed() {
     onlineStartedAt = Date.now();
-    onlineStatusMeta.textContent = "已等待 0 秒";
+    onlineStatusMeta.textContent = elapsedText();
     clearInterval(onlineElapsedTimer);
     onlineElapsedTimer = setInterval(function () {
-      onlineStatusMeta.textContent =
-        "已等待 " + Math.floor((Date.now() - onlineStartedAt) / 1000) + " 秒";
+      onlineStatusMeta.textContent = elapsedText();
     }, 1000);
   }
 
@@ -591,7 +699,7 @@
     let res;
     try {
       const url = /^https?:\/\//i.test(onlinePollUrl || "")
-        ? onlinePollUrl : API_BASE + (onlinePollUrl || "");
+        ? onlinePollUrl : apiBase + (onlinePollUrl || "");
       res = await fetch(url);
     } catch (err) {
       setOnlineStatus("在线体检 · 真实分析", "轮询连接波动，正在重试…", null, false);
@@ -671,6 +779,7 @@
     checkBtn.disabled = true;
     onlineTaskId = null;
     onlinePollUrl = null;
+    onlineEtaText = "";
     reportWrap.hidden = true;
     analyzePanel.hidden = true;
     onlineReport.hidden = true;
@@ -680,13 +789,13 @@
     startOnlineElapsed();
     let res;
     try {
-      res = await fetch(API_BASE + "/api/checkup", {
+      res = await fetch(apiBase + "/api/checkup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: description })
       });
     } catch (err) {
-      showOnlineError("无法连接体检服务（" + API_BASE + "）。请确认服务已启动；演示数据可用下方典型案例卡片离线查看。");
+      showOnlineError("无法连接体检服务（" + apiBase + "）。请确认服务已启动；演示数据可点击下方「试试示例」离线查看。");
       return;
     }
     if (res.status === 202) {
@@ -699,8 +808,9 @@
       }
       onlineTaskId = data.task_id || null;
       onlinePollUrl = data.poll_url || "/api/tasks/" + onlineTaskId;
+      onlineEtaText = formatEta(data.estimated_seconds);
       onlineStatusCard.classList.remove("is-error");
-      setOnlineStatus("在线体检 · 真实分析", "排队中", null, false);
+      setOnlineStatus("在线体检 · 真实分析", "排队中", elapsedText(), false);
       startPolling();
       return;
     }
@@ -724,7 +834,7 @@
     const text = input.value.trim();
 
     if (!text) {
-      setStatus("请先输入项目描述，或点击下方典型案例一键填入。", true);
+      setStatus("请先输入项目描述，或点击下方「试试示例」直接查看离线报告。", true);
       input.classList.add("is-error");
       input.focus();
       return;
@@ -785,7 +895,7 @@
       if (others.length > 1) pool = others;
     }
     if (!pool.length) {
-      setStatus("暂无可抽取的典型案例，请直接选择下方卡片。", true);
+      setStatus("暂无可抽取的示例，请直接点击下方「试试示例」。", true);
       return;
     }
     const c = pool[Math.floor(Math.random() * pool.length)];
@@ -822,6 +932,14 @@
     runCheck();
   });
 
-  renderCases();
+  /* 复制报告文本（在线）：pre 块 textContent 原样复制，与页面所见逐字一致 */
+  copyOnlineBtn.addEventListener("click", function () {
+    copyReportText(onlineReportPre.textContent, copyOnlineBtn);
+  });
+
+  /* 页脚只读提示：当前生效的体检服务地址（textContent 写入，不解析链接） */
+  apiNote.textContent = "当前体检服务地址：" + apiBase;
+
+  renderSamples();
   updateCharCount();
 })();
